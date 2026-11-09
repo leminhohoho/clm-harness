@@ -1,0 +1,13 @@
+[project]
+name = "harness"
+version = "0.1.0"
+description = "Agent-side library of the CLM harness (stdlib only; injected via PYTHONPATH)"
+requires-python = ">=3.12"
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = ["pytest>=8"]

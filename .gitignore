@@ -18,7 +18,6 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
 lib64/
 parts/
 sdist/
@@ -177,3 +176,7 @@ pyrightconfig.json
 
 .env
 ./data
+
+# clm-harness
+/data/
+node_modules/

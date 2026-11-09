@@ -1,0 +1,15 @@
+services:
+  backend:
+    build: { context: ., dockerfile: backend/Dockerfile }
+    env_file: .env
+    volumes:
+      - ./data:/agent # agent folder; on a remote DOCKER_HOST this path lives on the remote machine
+    init: true # reap orphaned jobs started by h.spawn
+    expose: ["8000"]
+    restart: unless-stopped
+
+  frontend:
+    build: { context: ., dockerfile: frontend/Dockerfile }
+    ports: ["0.0.0.0:5173:5173"]
+    depends_on: [backend]
+    restart: unless-stopped

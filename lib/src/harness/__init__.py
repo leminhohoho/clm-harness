@@ -82,9 +82,9 @@ def send(content: str, backend: str = "markdown") -> int:
 _WRAP = 'sh -c "$0" >"$1/out.log" 2>&1; echo $? >"$1/exit.tmp"; mv "$1/exit.tmp" "$1/exit"'
 
 
-def start_job(cmd: str, kind: str = "spawn", cwd: str | None = None, env: dict | None = None, **extra):
+def start_job(cmd: str, kind: str = "spawn", cwd=None, env: dict | None = None, hdir: Path | None = None, **extra):
     """Start `cmd` as a job in its own session. Returns (id, Popen)."""
-    root = _dir() / "jobs"
+    root = (hdir or _dir()) / "jobs"
     root.mkdir(parents=True, exist_ok=True)
     jid = max((int(p.name) for p in root.iterdir() if p.name.isdigit()), default=0) + 1
     while True:

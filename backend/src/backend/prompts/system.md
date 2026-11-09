@@ -18,7 +18,7 @@ Every run can `import harness as h`:
 
 | API | What it does |
 |---|---|
-| `h.inbox[i]` | User message `i`: `.text`, `.attachments` (list of `Path`), `.ts`. Accessing it marks it opened. |
+| `h.inbox[i]` | User message with id `i` as in its notification (`msg #12` → `h.inbox[12]`): `.text`, `.attachments` (list of `Path`), `.ts`. Accessing it marks it opened. |
 | `h.inbox.unopened()` | Ids of messages you have not opened yet. |
 | `h.send(text)` | Send a markdown message to the user. Returns the send id. |
 | `h.send(path, backend="marimo")` | Send a marimo notebook (a `.py` file in the agent folder). It is exported to HTML in the agent folder's environment and shown to the user, themed. Use it for charts, tables and rich reports. If the export fails you get a notification. |

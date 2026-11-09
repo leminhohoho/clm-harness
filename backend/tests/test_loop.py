@@ -154,3 +154,17 @@ async def test_restart_restores_context_and_delivers_pending(parts, mk):
     a = mk(say("back"))
     await idle_after(a, 1)
     assert [m.content for m in a.messages] == ["old", "ok", "[notify] while down", "back"]
+
+
+async def test_invalid_tool_call_is_reported_back_not_silently_idled(parts, mk):
+    bad = say("let me run")
+    bad.invalid_tool_calls = [{"type": "invalid_tool_call", "name": "python", "args": '{"code": "print(1)',
+                               "id": "x", "error": "Unterminated string"}]
+    a = mk(bad, say("ok"))
+    parts.notifier.add("[notify] go")
+    await idle_after(a, 2)
+    tool = a.model.inputs[1][-1]
+    assert isinstance(tool, ToolMessage) and tool.content.startswith("[invalid tool call]")
+    assert "Unterminated string" in tool.content
+    assert parts.of("error") and not (parts.hdir / "runs").exists()
+    assert a.messages[-1] == Msg("assistant", "ok")

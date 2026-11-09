@@ -25,16 +25,29 @@ class Outbox:
     def __init__(self, agent_dir: Path, state: State, events: Events, notifier: Notifier):
         self.agent, self.hdir = Path(agent_dir), Path(agent_dir) / ".harness"
         self.state, self.events, self.notifier = state, events, notifier
-        self.tasks: set[asyncio.Task] = set()
+        self.queue: list[dict] = []
+        self.task: asyncio.Task | None = None  # in-flight marimo export; later sends wait behind it
 
     def poll(self) -> None:
-        for row in tail(self.hdir / "outbox.jsonl", self.state, "outbox_pos"):
-            if row["backend"] == "marimo":
-                t = asyncio.create_task(self.export(row))
-                self.tasks.add(t)
-                t.add_done_callback(self.tasks.discard)
-            else:
-                self.events.emit("agent_message", id=row["id"], backend="markdown", text=row["content"])
+        self.queue += tail(self.hdir / "outbox.jsonl", self.state, "outbox_pos")
+        if self.task is None:
+            self._drain()
+
+    def _drain(self) -> None:
+        """Deliver queued sends in order; a marimo export blocks the rest until it finishes."""
+        while self.queue:
+            if self.queue[0]["backend"] == "marimo":
+                self.task = asyncio.create_task(self._export_next())
+                return
+            row = self.queue.pop(0)
+            self.events.emit("agent_message", id=row["id"], backend="markdown", text=row["content"])
+
+    async def _export_next(self) -> None:
+        try:
+            await self.export(self.queue.pop(0))
+        finally:
+            self.task = None
+        self._drain()
 
     async def export(self, row: dict) -> None:
         sid, nb = row["id"], row["content"]

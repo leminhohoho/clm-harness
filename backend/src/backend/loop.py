@@ -93,18 +93,25 @@ class Agent:
             text = _text(resp.content)
             if text:
                 self.events.emit("llm_reasoning", text=text)
-            if not resp.tool_calls:
+            if not resp.tool_calls and not resp.invalid_tool_calls:
                 self.messages.append(Msg("assistant", text))
                 return
-            call = Msg("assistant", text, resp.tool_calls[0]["args"].get("code", ""))
-            self.events.emit("code", code=call.code)
-            self._set("executing")
-            try:
-                out = (await self.executor.run(call.code)).rstrip()
-            except asyncio.CancelledError:
-                self.messages += [call, Msg("tool", STOPPED)]
-                raise
-            self.events.emit("run_result", output=out)
+            if resp.tool_calls:
+                call = Msg("assistant", text, resp.tool_calls[0]["args"].get("code", ""))
+                self.events.emit("code", code=call.code)
+                self._set("executing")
+                try:
+                    out = (await self.executor.run(call.code)).rstrip()
+                except asyncio.CancelledError:
+                    self.messages += [call, Msg("tool", STOPPED)]
+                    raise
+                self.events.emit("run_result", output=out)
+            else:  # unparseable arguments: tell the agent instead of silently idling
+                bad = resp.invalid_tool_calls[0]
+                call = Msg("assistant", text, str(bad.get("args") or ""))
+                out = (f"[invalid tool call] arguments could not be parsed ({bad.get('error') or 'invalid JSON'}); "
+                       'nothing was run. Call python with JSON arguments {"code": "<source>"}.')
+                self.events.emit("error", text=out)
             receipt = self._sync_edit()
             self.messages.append(call)
             n = tokens(self.system + render(self.messages) + out)

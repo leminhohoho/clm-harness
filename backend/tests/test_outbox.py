@@ -73,3 +73,14 @@ def test_themed_sets_mode_and_injects_css():
     assert '"theme": "dark"' in out and '"theme": "light"' not in out
     assert "<style>/*CSS*/</style></head>" in out
     assert '"theme": "light"' in themed(html, "", "light")
+
+
+async def test_messages_are_delivered_in_send_order(parts):
+    import harness
+    (parts.agent / "nb.py").write_text(NB)
+    harness.send("nb.py", backend="marimo")
+    harness.send("after the notebook")
+    o = ob(parts)
+    o.poll()
+    assert await until(lambda: len(parts.of("agent_message")) == 2, timeout=180, tick=o.poll)
+    assert [m["id"] for m in parts.of("agent_message")] == [1, 2]

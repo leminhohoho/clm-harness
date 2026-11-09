@@ -36,6 +36,12 @@ def _alive(pid: int, jd: Path) -> bool:
     return True
 
 
+def agent_env(hdir: Path) -> dict:
+    """Environment for processes run in the agent folder: harness lib injected, backend venv hidden."""
+    env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
+    return env | {"HARNESS_DIR": str(hdir), "PYTHONPATH": LIB_PATH}
+
+
 class Executor:
     def __init__(self, agent_dir: Path, notifier: Notifier, events: Events, metrics: Metrics, timeout: float = 60):
         self.agent, self.hdir = Path(agent_dir).resolve(), Path(agent_dir).resolve() / ".harness"
@@ -44,8 +50,7 @@ class Executor:
         self.known: set[int] = set()
         self.running: set[int] = set()
         self.fg: set[int] = set()  # runs the executor is waiting on in the foreground
-        self.env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
-        self.env |= {"HARNESS_DIR": str(self.hdir), "PYTHONPATH": LIB_PATH}
+        self.env = agent_env(self.hdir)
 
     # --- job files ---------------------------------------------------------
     def _meta(self, jid: int) -> dict:

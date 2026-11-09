@@ -23,6 +23,22 @@ class State:
         write_json(self.path, self.data)
 
 
+def tail(path: Path, state: State, key: str) -> list[dict]:
+    """New complete JSONL rows since the byte offset persisted under state[key]."""
+    pos = state.data.get(key, 0)
+    if not path.exists() or path.stat().st_size <= pos:
+        return []
+    with open(path, "rb") as f:
+        f.seek(pos)
+        data = f.read()
+    end = data.rfind(b"\n") + 1
+    if not end:
+        return []
+    state.data[key] = pos + end
+    state.save()
+    return [json.loads(l) for l in data[:end].splitlines() if l.strip()]
+
+
 class Events:
     def __init__(self, path: Path):
         self.path = path

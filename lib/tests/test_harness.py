@@ -108,6 +108,7 @@ class FakeLLM(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         assert self.path == "/v1/chat/completions"
         assert self.headers["Authorization"] == "Bearer k"
+        assert not self.headers["User-Agent"].startswith("Python-urllib")  # blocked by Cloudflare (1010)
         prompt = body["messages"][0]["content"]
         out = {
             "choices": [{"message": {"role": "assistant", "content": f"{body['model']}:{prompt.upper()}"}}],

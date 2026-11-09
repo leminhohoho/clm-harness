@@ -138,7 +138,8 @@ def _complete(prompt: str) -> str:
     req = urllib.request.Request(
         os.environ["OPENAI_BASE_URL"].rstrip("/") + "/chat/completions",
         data=json.dumps({"model": model, "messages": [{"role": "user", "content": prompt}]}).encode(),
-        headers={"Content-Type": "application/json", "Authorization": f"Bearer {os.environ['OPENAI_API_KEY']}"},
+        headers={"Content-Type": "application/json", "Authorization": f"Bearer {os.environ['OPENAI_API_KEY']}",
+                 "User-Agent": "clm-harness/0.1"},  # default Python-urllib UA is blocked by some gateways
     )
     t = time.time()
     with urllib.request.urlopen(req, timeout=600) as r:

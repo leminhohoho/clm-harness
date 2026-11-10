@@ -78,8 +78,8 @@ function Item({ item, profile }: { item: ChatItem; profile: string }) {
     <div className="msg">
       <div className="bubble in">
         <Attachments profile={profile} dir={`.harness/outbox/${item.id}`} files={item.files} />
-        <span className="meta">{timeOf(item.ts)}</span>
         <Md text={item.text} />
+        <span className="meta">{timeOf(item.ts)}</span>
       </div>
     </div>
   );

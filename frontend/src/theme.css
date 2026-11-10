@@ -100,10 +100,10 @@ main { flex: 1; min-height: 0; position: relative; }
 /* chat bubbles */
 .msg { display: flex; margin: 6px 0; min-width: 0; }
 .msg.you { justify-content: flex-end; }
-.bubble { position: relative; max-width: 75%; min-width: 72px; padding: 6px 10px 5px; border-radius: 12px; box-shadow: var(--shadow); overflow-wrap: anywhere; }
+.bubble { display: flow-root; max-width: 75%; min-width: 72px; padding: 6px 10px 5px; border-radius: 12px; box-shadow: var(--shadow); overflow-wrap: anywhere; }
 .bubble.in { background: var(--bubble-in); border-bottom-left-radius: 4px; }
 .bubble.out { background: var(--bubble-out); border-bottom-right-radius: 4px; }
-.bubble .meta { float: right; margin: 6px 0 -3px 12px; font-size: 11px; color: var(--muted); white-space: nowrap; user-select: none; }
+.bubble .meta { float: right; margin: 2px 0 -3px 12px; font-size: 11px; color: var(--muted); white-space: nowrap; user-select: none; }
 .bubble.out .meta, .bubble.out .dim { color: var(--meta-out); }
 .att { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 2px; }
 .att img { display: block; max-width: 100%; max-height: 320px; border-radius: 8px; object-fit: contain; }

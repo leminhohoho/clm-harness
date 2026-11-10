@@ -5,7 +5,7 @@ type Entry = { name: string; dir: boolean; size: number; mtime: number };
 type Sel = { path: string; size: number };
 const TEXT_LIMIT = 1 << 20;
 
-type Content = { path: string; rev: number } & ({ text: string } | { binary: true });
+type Content = { path: string; rev: number } & ({ text: string } | { binary: true } | { status: number });
 
 function FilePane({ profile, sel, rev }: { profile: string; sel: Sel; rev: number }) {
   const [content, setContent] = useState<Content>();
@@ -13,11 +13,12 @@ function FilePane({ profile, sel, rev }: { profile: string; sel: Sel; rev: numbe
   useEffect(() => {
     if (image || sel.size > TEXT_LIMIT) return;
     let live = true;
-    fetch(rawUrl(profile, sel.path)).then((r) => r.arrayBuffer()).then((buf) => {
+    fetch(rawUrl(profile, sel.path)).then(async (r) => {
+      const bytes = r.ok ? new Uint8Array(await r.arrayBuffer()) : null;
       if (!live) return;
-      const bytes = new Uint8Array(buf);
-      setContent(bytes.subarray(0, 8192).includes(0) ? { path: sel.path, rev, binary: true }
-        : { path: sel.path, rev, text: new TextDecoder().decode(bytes) });
+      const at = { path: sel.path, rev };
+      setContent(!bytes ? { ...at, status: r.status } : bytes.subarray(0, 8192).includes(0) ? { ...at, binary: true }
+        : { ...at, text: new TextDecoder().decode(bytes) });
     });
     return () => void (live = false);
   }, [profile, sel.path, rev]);
@@ -32,6 +33,7 @@ function FilePane({ profile, sel, rev }: { profile: string; sel: Sel; rev: numbe
       </div>
       {image ? <div className="preview"><img src={`${rawUrl(profile, sel.path)}?r=${rev}`} alt={sel.path} /></div>
         : binary ? <div className="preview dim">binary file · {fmtSize(sel.size)}</div>
+        : cur && "status" in cur ? <div className="preview err">not readable ({cur.status}) · deleted, or a link outside the agent folder</div>
         : cur && "text" in cur && (
           <pre className="raw numbered">{cur.text.replace(/\n$/, "").split("\n").map((l, i) => <span key={i} className="ln">{l || " "}</span>)}</pre>
         )}

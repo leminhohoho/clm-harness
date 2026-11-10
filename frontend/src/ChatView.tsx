@@ -129,7 +129,7 @@ export function ChatView({ events, theme }: { events: Ev[]; theme: string }) {
             {f.name} ×
           </button>
         ))}
-        <button className="ghost" onClick={() => fileInput.current?.click()} title="attach files">+ file</button>
+        <button onClick={() => fileInput.current?.click()} title="attach files">+ file</button>
         <input ref={fileInput} type="file" multiple hidden
           onChange={(e) => setFiles((f) => [...f, ...Array.from(e.target.files ?? [])])} />
         <button className="primary" onClick={() => void send()} disabled={busy}>Send</button>

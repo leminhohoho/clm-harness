@@ -50,7 +50,7 @@ export function App() {
         ))}
         <span className="spacer" />
         <span className="dim hint">alt+t tab · alt+m metrics · alt+d theme</span>
-        <button className="ghost" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>◐ {theme}</button>
+        <button onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>◐ {theme}</button>
       </header>
       <main>
         {tab === "chat" ? <ChatView events={events} theme={theme} />

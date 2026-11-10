@@ -1,6 +1,6 @@
 /* Injected by the backend into exported marimo HTML (GET /api/outbox/<id>.html?theme=…).
    Goal: the export reads as part of the chat message — palette C, Inter, no notebook chrome, no code,
-   page height = content height (reported to the parent by the injected script). Selectors verified on marimo 0.2x exports. */
+   page height = content height (reported to the parent by the injected script). Selectors verified on marimo 0.25 exports. */
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:ital,wght@0,400;0,600;1,400&display=swap");
 
 html[data-theme] {

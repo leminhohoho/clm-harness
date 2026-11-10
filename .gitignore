@@ -180,3 +180,4 @@ pyrightconfig.json
 # clm-harness
 /data/
 node_modules/
+.superpowers/

@@ -14,11 +14,20 @@ def _first_error(out: str) -> str:
     return next((l for l in lines if "error" in l.lower()), lines[0] if lines else "unknown error")[:200]
 
 
+# reports the page's content height so the sandboxed iframe can be sized without same-origin access
+HEIGHT_JS = """<script>(() => {
+  const html = document.documentElement;
+  const post = () => parent.postMessage({ type: "marimo-height", height: html.getBoundingClientRect().height }, "*");
+  addEventListener("load", post);
+  new ResizeObserver(post).observe(html);
+})();</script>"""
+
+
 def themed(html: str, css: str, theme: str) -> str:
     """Apply app theme to a raw marimo export at serve time."""
     html = html.replace("<html", f'<html data-theme="{theme}"', 1)
     html = re.sub(r'"theme": "(light|dark|system)"', f'"theme": "{theme}"', html)
-    return html.replace("</head>", f"<style>{css}</style></head>", 1)
+    return html.replace("</head>", f"<style>{css}</style>{HEIGHT_JS}</head>", 1)
 
 
 class Outbox:
@@ -54,7 +63,7 @@ class Outbox:
         (self.hdir / "outbox").mkdir(exist_ok=True)
         out = self.hdir / "outbox" / f"{sid}.html"
         p = await asyncio.create_subprocess_exec(
-            "uv", "run", "-q", "--with", "marimo", "marimo", "export", "html", nb, "-o", str(out),
+            "uv", "run", "-q", "--with", "marimo", "marimo", "export", "html", "--no-include-code", nb, "-o", str(out),
             cwd=self.agent, env=agent_env(self.hdir), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
         log = (await p.communicate())[0].decode(errors="replace")
         if p.returncode == 0 and out.exists():

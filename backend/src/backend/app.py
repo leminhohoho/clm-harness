@@ -14,6 +14,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 
 from harness import write_json
 
+from .context import diff_lines
 from .events import Events, State, tail
 from .executor import Executor
 from .loop import Agent
@@ -120,6 +121,13 @@ def create_app(agent_dir: Path | None = None, model=None) -> FastAPI:
         css_path = Path(os.environ.get("MARIMO_THEME_CSS", THEME_CSS))
         css = css_path.read_text() if css_path.is_file() else ""
         return HTMLResponse(themed(p.read_text(), css, "dark" if theme == "dark" else "light"))
+
+    @app.get("/api/context-edits/{n}")
+    async def context_edit(n: int):
+        b, a = (hdir / "context-edits" / f"{n}.{k}.md" for k in ("before", "after"))
+        if not (b.is_file() and a.is_file()):
+            raise HTTPException(404)
+        return {"n": n, "lines": diff_lines(b.read_text(), a.read_text())}
 
     @app.get("/api/metrics")
     async def get_metrics():

@@ -87,6 +87,17 @@ def test_outbox_html_is_themed_on_serve(env):
         assert c.get("/api/outbox/9.html").status_code == 404
 
 
+def test_context_edit_diff_route(env):
+    with client(env) as c:
+        d = env / ".harness/context-edits"
+        d.mkdir()
+        (d / "2.before.md").write_text("a\nb\n")
+        (d / "2.after.md").write_text("a\nc\n")
+        assert c.get("/api/context-edits/2").json() == {
+            "n": 2, "lines": [{"op": " ", "text": "a"}, {"op": "-", "text": "b"}, {"op": "+", "text": "c"}]}
+        assert c.get("/api/context-edits/3").status_code == 404
+
+
 def test_stop_endpoint(env):
     with client(env) as c:
         assert c.post("/api/agent/stop").json() == {"ok": True}

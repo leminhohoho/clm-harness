@@ -1,64 +1,80 @@
 /* Injected by the backend into exported marimo HTML (GET /api/outbox/<id>.html?theme=…).
-   Tokens mirror theme.css; marimo's own light/dark mode is switched via its display config. */
-@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,600;1,400&display=swap");
+   Goal: the export reads as part of the chat message — palette C, Inter, no notebook chrome, no code,
+   page height = content height (reported to the parent by the injected script). Selectors verified on marimo 0.25 exports. */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:ital,wght@0,400;0,600;1,400&display=swap");
 
 html[data-theme] {
-  --marimo-heading-font: "JetBrains Mono", ui-monospace, monospace;
-  --marimo-text-font: "JetBrains Mono", ui-monospace, monospace;
+  --marimo-heading-font: Inter, -apple-system, "Segoe UI", sans-serif;
+  --marimo-text-font: Inter, -apple-system, "Segoe UI", sans-serif;
   --marimo-monospace-font: "JetBrains Mono", ui-monospace, monospace;
 }
 
+/* `*` also reaches custom-element hosts (marimo-table…): outer rules beat their shadow :host theme vars */
 html[data-theme="light"],
-html[data-theme="light"] body,
-html[data-theme="light"] .light,
-html[data-theme="light"] .light-theme {
-  --background: #fafaf8;
-  --foreground: #262626;
-  --muted: #f1f0ed;
-  --muted-foreground: #7c7c7a;
-  --popover: #f1f0ed;
-  --popover-foreground: #262626;
-  --card: #fafaf8;
-  --card-foreground: #262626;
-  --border: #dddcd8;
-  --input: #dddcd8;
-  --primary: #c15f3c;
-  --primary-foreground: #fafaf8;
-  --secondary: #e8e7e3;
-  --secondary-foreground: #262626;
-  --accent: #e8e7e3;
-  --accent-foreground: #0f0f0f;
-  --ring: #c15f3c;
+html[data-theme="light"] * {
+  --background: #f5f7f9;
+  --foreground: #2a3038;
+  --muted: #eaeef2;
+  --muted-foreground: #5c6672;
+  --popover: #eaeef2;
+  --popover-foreground: #2a3038;
+  --card: #f5f7f9;
+  --card-foreground: #2a3038;
+  --border: #dde3e9;
+  --input: #dde3e9;
+  --primary: #3a6e6c;
+  --primary-foreground: #f5f7f9;
+  --secondary: #e4e9ee;
+  --secondary-foreground: #2a3038;
+  --accent: #e4e9ee;
+  --accent-foreground: #1d232a;
+  --ring: #3a6e6c;
 }
 
 html[data-theme="dark"],
-html[data-theme="dark"] body,
-html[data-theme="dark"] .dark,
-html[data-theme="dark"] .dark-theme {
-  --background: #131313;
-  --foreground: #d4d4d2;
-  --muted: #1b1b1b;
-  --muted-foreground: #7d7d7b;
-  --popover: #1b1b1b;
-  --popover-foreground: #d4d4d2;
-  --card: #131313;
-  --card-foreground: #d4d4d2;
-  --border: #2c2c2c;
-  --input: #2c2c2c;
-  --primary: #d97757;
-  --primary-foreground: #131313;
-  --secondary: #242424;
-  --secondary-foreground: #d4d4d2;
-  --accent: #242424;
-  --accent-foreground: #f2f2f0;
-  --ring: #d97757;
+html[data-theme="dark"] * {
+  --background: #22262c;
+  --foreground: #d3d8de;
+  --muted: #282d34;
+  --muted-foreground: #949da8;
+  --popover: #282d34;
+  --popover-foreground: #d3d8de;
+  --card: #22262c;
+  --card-foreground: #d3d8de;
+  --border: #30363e;
+  --input: #30363e;
+  --primary: #8fbcbb;
+  --primary-foreground: #22262c;
+  --secondary: #2e333b;
+  --secondary-foreground: #d3d8de;
+  --accent: #2e333b;
+  --accent-foreground: #e4e8ec;
+  --ring: #8fbcbb;
 }
 
+/* page = content height, no own scrolling (the parent sizes the iframe) */
+html[data-theme], html[data-theme] body, html[data-theme] #root { height: auto !important; min-height: 0 !important; overflow: hidden !important; }
 html[data-theme] body { background: var(--background); color: var(--foreground); }
-html[data-theme] .cm-editor { background-color: var(--muted) !important; }
-html[data-theme] .cm-gutters { background: transparent !important; border: none !important; }
-html[data-theme] [data-testid="static-notebook-banner"] {
-  background: var(--muted);
-  border-color: var(--border);
-  color: var(--muted-foreground);
-}
+html[data-theme] [data-testid="chrome-wrapper"] { position: static !important; overflow: visible !important; }
+html[data-theme] [data-panel-group], html[data-theme] [data-panel] { height: auto !important; overflow: visible !important; }
+html[data-theme] #App { height: auto !important; overflow: visible !important; }
+
+/* full-width column aligned with markdown messages */
+html[data-theme] #App > div { padding: 0 !important; }
+html[data-theme] #App > div > div { max-width: none !important; min-width: 0 !important; margin: 0 !important; padding-bottom: 0 !important; }
+html[data-theme] .output-area { padding: 0 !important; border: none !important; }
+
+/* notebook chrome: banner, badge, toasts, outline, menus, hover actions */
+html[data-theme] [data-testid="static-notebook-banner"],
+html[data-theme] [data-testid="watermark"],
+html[data-theme] [data-testid="notebook-actions-dropdown"],
+html[data-theme] [data-testid="fullscreen-output-button"],
+html[data-theme] #root .fixed,
+html[data-theme] [role="region"] > ol,
+html[data-theme] .vega-embed > details { display: none !important; }
+html[data-theme] .vega-embed.has-actions { padding-right: 0 !important; }
+
+/* older exports that still contain code: hide editors, cell frames and output-less cells */
+html[data-theme] .marimo-cell, html[data-theme] .marimo-cell > div { border: none !important; box-shadow: none !important; background: transparent !important; }
+html[data-theme] .marimo-cell .tray,
+html[data-theme] .marimo-cell:not(:has(.output-area)) { display: none !important; }

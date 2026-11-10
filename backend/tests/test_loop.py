@@ -113,17 +113,27 @@ async def test_context_edit_replaces_messages_with_receipt(parts, mk):
     assert [m.role for m in a.messages] == ["user", "assistant", "tool", "assistant"]
     assert "[context edited] 3 → 1 turns" in a.messages[2].content
     ce = parts.of("context_edit")[0]
-    assert ce["ok"] and ce["before"] > ce["after"]
+    assert ce["ok"] and ce["before"] > ce["after"] and ce["n"] == 1
+    snaps = parts.hdir / "context-edits"
+    assert (snaps / "1.after.md").read_text() == "[[CTX_TURN 0 role=user]]\nsummary: user wants X\n"  # raw, not re-rendered
+    before = (snaps / "1.before.md").read_text()
+    assert before.startswith("[[CTX_TURN 0 role=user]]\n[notify] go") and "x" * 4000 in before
     assert parts.metrics.snapshot()["context"]["edits"] == 1 and parts.metrics.snapshot()["context"]["freed"] > 900
 
 
 async def test_broken_context_edit_is_discarded(parts, mk):
+    (parts.hdir / "context-edits").mkdir(parents=True)
+    (parts.hdir / "context-edits/1.after.md").write_text("from a previous process")
     a = mk(call("open('.harness/context.md', 'w').write('garbage')"), say("fin"))
     parts.notifier.add("[notify] go")
     await idle_after(a, 2)
     assert a.messages[0] == Msg("user", "[notify] go")
     assert "[context edit rejected:" in a.messages[2].content
     assert parse((parts.hdir / "context.md").read_text()) == a.messages
+    ce = parts.of("context_edit")[0]
+    assert not ce["ok"] and ce["n"] == 2  # numbering survives restarts, counts rejected edits too
+    assert (parts.hdir / "context-edits/2.after.md").read_text() == "garbage"
+    assert parse((parts.hdir / "context-edits/2.before.md").read_text()) == [Msg("user", "[notify] go")]
 
 
 async def test_stop_cancels_run_and_goes_idle(parts, mk):

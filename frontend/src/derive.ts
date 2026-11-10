@@ -4,6 +4,7 @@ export type AgentMsg = Base & { type: "agent_message"; id: number } & (
   | { backend: "markdown"; text: string }
   | { backend: "marimo"; path: string; url: string }
 );
+export type ContextEdit = Base & { type: "context_edit"; ok: boolean; receipt: string; before?: number; after?: number; n?: number };
 export type Ev =
   | UserMsg
   | AgentMsg
@@ -11,7 +12,7 @@ export type Ev =
   | (Base & { type: "code"; code: string })
   | (Base & { type: "run_result"; output: string })
   | (Base & { type: "notification"; nseq: number; text: string })
-  | (Base & { type: "context_edit"; ok: boolean; receipt: string; before?: number; after?: number })
+  | ContextEdit
   | (Base & { type: "job_update"; id: number; status: string; cmd?: string; exit?: number })
   | (Base & { type: "state"; state: string })
   | (Base & {
@@ -68,4 +69,28 @@ export function mergeEvents(events: Ev[], batch: Ev[]): Ev[] {
   let last = events.length ? events[events.length - 1].seq : 0;
   const fresh = batch.filter((e) => e.seq > last && ((last = e.seq), true));
   return fresh.length ? events.concat(fresh) : events;
+}
+
+export const contextEdits = (events: Ev[]) =>
+  events.filter((e): e is ContextEdit & { n: number } => e.type === "context_edit" && e.n != null).reverse();
+
+export type DiffLine = { op: " " | "+" | "-"; text: string };
+export type DiffRow = DiffLine | { fold: number; lines: DiffLine[] };
+
+/** Collapse runs of more than `min` unchanged (head+tail `ctx` kept) or removed (head `ctx` kept) lines. */
+export function foldDiff(lines: DiffLine[], ctx = 3, min = 8): DiffRow[] {
+  const out: DiffRow[] = [];
+  for (let i = 0; i < lines.length; ) {
+    let j = i;
+    while (j < lines.length && lines[j].op === lines[i].op) j++;
+    const run = lines.slice(i, j), op = lines[i].op;
+    if (op === "+" || run.length <= min) out.push(...run);
+    else {
+      const tail = op === " " ? ctx : 0;
+      out.push(...run.slice(0, ctx), { fold: run.length - ctx - tail, lines: run.slice(ctx, run.length - tail) },
+        ...run.slice(run.length - tail));
+    }
+    i = j;
+  }
+  return out;
 }

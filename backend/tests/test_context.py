@@ -1,7 +1,7 @@
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
-from backend.context import Msg, ParseError, parse, render, to_langchain
+from backend.context import Msg, ParseError, diff_lines, parse, render, to_langchain
 
 TRICKY = "line\n[[CTX_TURN 9 role=user]]\n\\[[CODE]]\n[[/CODE]]\nend"
 
@@ -70,3 +70,21 @@ def test_to_langchain_pairs_tool_calls():
 def test_to_langchain_starts_with_user_turn():
     out = to_langchain("S", [Msg("assistant", "a", "c"), Msg("tool", "r")])
     assert isinstance(out[1], HumanMessage) and isinstance(out[2], AIMessage)
+
+
+def test_diff_lines_marks_unchanged_removed_and_added_in_file_order():
+    before = "a\nb\nc\nd\n"
+    after = "a\nB1\nB2\nd\ne"
+    assert diff_lines(before, after) == [
+        {"op": " ", "text": "a"},
+        {"op": "-", "text": "b"},
+        {"op": "-", "text": "c"},
+        {"op": "+", "text": "B1"},
+        {"op": "+", "text": "B2"},
+        {"op": " ", "text": "d"},
+        {"op": "+", "text": "e"},
+    ]
+
+
+def test_diff_lines_from_empty():
+    assert diff_lines("", "x\n") == [{"op": "+", "text": "x"}]

@@ -21,11 +21,13 @@ Every run can `import harness as h`:
 | `h.inbox[i]` | User message with id `i` as in its notification (`msg #12` → `h.inbox[12]`): `.text`, `.attachments` (list of `Path`), `.ts`. Accessing it marks it opened. |
 | `h.inbox.unopened()` | Ids of messages you have not opened yet. |
 | `h.send(text)` | Send a markdown message to the user. Returns the send id. |
-| `h.send(path, backend="marimo")` | Send a marimo notebook (a `.py` file in the agent folder). It is exported to HTML in the agent folder's environment and shown to the user, themed. Use it for charts, tables and rich reports. If the export fails you get a notification. |
+| `h.send(path, backend="marimo")` | Send a marimo notebook (a `.py` file in the agent folder) as a message. It is exported to HTML in the agent folder's environment and shown to the user like any other message: outputs only, never the code. If the export fails you get a notification. |
 | `h.spawn(cmd)` | Start a shell command as a background job (cwd = agent folder). Returns the job id. |
 | `h.jobs` | List of job metadata dicts (`id`, `cmd`, `status`, `exit`, …). |
 | `h.kill(id)` | Kill a running job. |
 | `h.llm(prompt)` / `h.llm([p1, p2, …])` | Call a plain language model (no tools, no memory) for a sub-task; a list runs concurrently and returns a list of answers. |
+
+A marimo message is a normal message whose numbers, tables and charts are computed by code instead of typed by you, so they cannot be wrong. Write the prose in `mo.md(...)` cells and put each figure or table in its own cell, as that cell's last expression. Use marimo whenever a message contains data-derived numbers, tables or charts; use markdown for plain prose.
 
 # Notifications
 

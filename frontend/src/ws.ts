@@ -1,13 +1,17 @@
 import { useEffect, useState } from "react";
 import { mergeEvents, type Ev, type Metrics } from "./derive";
 
-/** Event stream: backlog from the last seen seq, then live events; reconnects and resumes after drops. */
-export function useEvents() {
+/** A profile's event stream: backlog from the last seen seq, then live events; reconnects and resumes after drops. */
+export function useEvents(profile: string | null) {
   const [events, setEvents] = useState<Ev[]>([]);
   const [metrics, setMetrics] = useState<{ m: Metrics; at: number } | null>(null);
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
+    setEvents([]);
+    setMetrics(null);
+    setConnected(false);
+    if (!profile) return;
     let ws: WebSocket;
     let stopped = false;
     let last = 0;
@@ -21,7 +25,8 @@ export function useEvents() {
       setEvents((ev) => mergeEvents(ev, batch));
     };
     const connect = () => {
-      ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws?after=${last}`);
+      const proto = location.protocol === "https:" ? "wss" : "ws";
+      ws = new WebSocket(`${proto}://${location.host}/ws/${encodeURIComponent(profile)}?after=${last}`);
       ws.onopen = () => setConnected(true);
       ws.onmessage = (msg) => {
         const d = JSON.parse(msg.data) as Ev | Metrics;
@@ -30,9 +35,9 @@ export function useEvents() {
         queue.push(d);
         flushing ||= window.setTimeout(flush, 30);
       };
-      ws.onclose = () => {
+      ws.onclose = (e) => {
         setConnected(false);
-        if (!stopped) retry = window.setTimeout(connect, 1000);
+        if (!stopped && e.code !== 4404) retry = window.setTimeout(connect, 1000); // 4404: profile is gone
       };
     };
     connect();
@@ -42,7 +47,7 @@ export function useEvents() {
       clearTimeout(flushing);
       ws.close();
     };
-  }, []);
+  }, [profile]);
 
   return { events, metrics, connected };
 }

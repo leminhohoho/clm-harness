@@ -1,7 +1,7 @@
 import hljs from "highlight.js/lib/common";
 import { useMemo } from "react";
 import { Md, useStickyScroll } from "./ChatView";
-import { fmtCost, fmtDur, fmtTok, pct, type Ev } from "./derive";
+import { api, fmtCost, fmtDur, fmtTok, pct, type Ev } from "./derive";
 
 function Code({ code }: { code: string }) {
   const html = useMemo(() => hljs.highlight(code, { language: "python" }).value, [code]);
@@ -44,7 +44,7 @@ function Line({ e }: { e: Ev }) {
         </div>
       );
     case "agent_message":
-      return <div className="t sent">→ sent #{e.id} ({e.backend}){e.backend === "markdown" ? <Md text={e.text} /> : ` ${e.path}`}</div>;
+      return <div className="t sent">→ sent #{e.id}{e.files.length ? ` · ${e.files.map((f) => f.name).join(", ")}` : ""}<Md text={e.text} /></div>;
     case "message_opened":
       return <div className="t dim">opened msg #{e.id}</div>;
     case "error":
@@ -52,13 +52,13 @@ function Line({ e }: { e: Ev }) {
   }
 }
 
-export function TraceView({ events, state }: { events: Ev[]; state: string }) {
+export function TraceView({ events, state, profile }: { events: Ev[]; state: string; profile: string }) {
   const { ref, onScroll } = useStickyScroll(events.length);
   return (
     <div className="view">
       <div className="toolbar">
         <span className="dim">read-only trace · {events.length} events</span>
-        <button className="stop" disabled={state === "idle"} onClick={() => void fetch("/api/agent/stop", { method: "POST" })}>
+        <button className="stop" disabled={state === "idle"} onClick={() => void fetch(`${api(profile)}/agent/stop`, { method: "POST" })}>
           ■ Stop
         </button>
       </div>

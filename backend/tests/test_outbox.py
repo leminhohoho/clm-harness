@@ -10,7 +10,7 @@ app = marimo.App()
 @app.cell
 def _():
     import marimo as mo
-    mo.md("# hi")
+    mo.md("# hi")  # code-only-marker
     return
 
 if __name__ == "__main__":
@@ -51,7 +51,8 @@ async def test_marimo_send_exports_html(parts):
     assert await until(lambda: parts.of("agent_message"), timeout=180)
     m = parts.of("agent_message")[0]
     assert m["backend"] == "marimo" and m["url"] == "/api/outbox/1.html" and m["path"] == "nb.py"
-    assert "<marimo-code" in (parts.hdir / "outbox/1.html").read_text()
+    html = (parts.hdir / "outbox/1.html").read_text()
+    assert "<marimo-code" in html and "code-only-marker" not in html  # outputs only, code never shipped
 
 
 async def test_marimo_export_failure_notifies_agent(parts):
@@ -71,8 +72,14 @@ def test_themed_sets_mode_and_injects_css():
     out = themed(html, "/*CSS*/", "dark")
     assert '<html data-theme="dark" lang="en">' in out
     assert '"theme": "dark"' in out and '"theme": "light"' not in out
-    assert "<style>/*CSS*/</style></head>" in out
+    assert "<style>/*CSS*/</style>" in out
     assert '"theme": "light"' in themed(html, "", "light")
+
+
+def test_themed_injects_height_reporter_into_head():
+    out = themed("<html><head></head><body></body></html>", "", "light")
+    head = out.split("</head>")[0]
+    assert "ResizeObserver" in head and 'type: "marimo-height"' in head and "parent.postMessage" in head
 
 
 async def test_messages_are_delivered_in_send_order(parts):

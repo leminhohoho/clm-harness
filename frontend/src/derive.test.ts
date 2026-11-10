@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { chatItems, fmtCost, fmtDur, fmtTok, mergeEvents, runningJobs, type Ev } from "./derive";
+import { chatItems, contextEdits, fmtCost, fmtDur, fmtTok, foldDiff, mergeEvents, runningJobs, type DiffLine, type Ev } from "./derive";
 
 describe("formatters", () => {
   test("tokens", () => {
@@ -49,4 +49,45 @@ test("mergeEvents appends a batch, dropping already-seen seqs (reconnect overlap
   const evs = mergeEvents([], [ev(1), ev(2)]);
   expect(mergeEvents(evs, [ev(2)])).toBe(evs);
   expect(mergeEvents(evs, [ev(2), ev(3), ev(3), ev(4)]).map((e) => e.seq)).toEqual([1, 2, 3, 4]);
+});
+
+test("contextEdits lists numbered edits newest first, rejected ones included", () => {
+  const edits = contextEdits([
+    { seq: 1, type: "context_edit", ok: true, receipt: "old event without n" },
+    { seq: 2, type: "context_edit", ok: true, receipt: "a", n: 1 },
+    { seq: 3, type: "state", state: "idle" },
+    { seq: 4, type: "context_edit", ok: false, receipt: "rejected: x", n: 2 },
+  ]);
+  expect(edits.map((e) => e.n)).toEqual([2, 1]);
+});
+
+describe("foldDiff", () => {
+  const run = (op: DiffLine["op"], n: number, tag: string = op): DiffLine[] =>
+    Array.from({ length: n }, (_, i) => ({ op, text: `${tag}${i}` }));
+
+  test("long unchanged runs keep 3 lines of context on each side", () => {
+    const lines = [...run("+", 1), ...run(" ", 10), ...run("+", 1, "b")];
+    const out = foldDiff(lines);
+    expect(out.map((r) => ("fold" in r ? `fold${r.fold}` : r.text))).toEqual(
+      ["+0", " 0", " 1", " 2", "fold4", " 7", " 8", " 9", "b0"]);
+    const fold = out[4];
+    expect("fold" in fold && fold.lines.map((l) => l.text)).toEqual([" 3", " 4", " 5", " 6"]);
+  });
+
+  test("runs of up to 8 unchanged lines stay unfolded", () => {
+    const lines = run(" ", 8);
+    expect(foldDiff(lines)).toEqual(lines);
+  });
+
+  test("long removed runs show their head, then a fold", () => {
+    const out = foldDiff(run("-", 10));
+    expect(out.slice(0, 3)).toEqual(run("-", 3));
+    expect(out[3]).toEqual({ fold: 7, lines: run("-", 10).slice(3) });
+    expect(out).toHaveLength(4);
+  });
+
+  test("added lines are never folded", () => {
+    const lines = run("+", 30);
+    expect(foldDiff(lines)).toEqual(lines);
+  });
 });

@@ -16,9 +16,10 @@ def _first_error(out: str) -> str:
 
 # reports the page's content height so the sandboxed iframe can be sized without same-origin access
 HEIGHT_JS = """<script>(() => {
-  const post = () => parent.postMessage({ type: "marimo-height", height: document.body.scrollHeight }, "*");
+  const html = document.documentElement;
+  const post = () => parent.postMessage({ type: "marimo-height", height: html.getBoundingClientRect().height }, "*");
   addEventListener("load", post);
-  addEventListener("DOMContentLoaded", () => new ResizeObserver(post).observe(document.body));
+  new ResizeObserver(post).observe(html);
 })();</script>"""
 
 

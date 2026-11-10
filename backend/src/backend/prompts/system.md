@@ -20,14 +20,13 @@ Every run can `import harness as h`:
 |---|---|
 | `h.inbox[i]` | User message with id `i` as in its notification (`msg #12` → `h.inbox[12]`): `.text`, `.attachments` (list of `Path`), `.ts`. Accessing it marks it opened. |
 | `h.inbox.unopened()` | Ids of messages you have not opened yet. |
-| `h.send(text)` | Send a markdown message to the user. Returns the send id. |
-| `h.send(path, backend="marimo")` | Send a marimo notebook (a `.py` file in the agent folder) as a message. It is exported to HTML in the agent folder's environment and shown to the user like any other message: outputs only, never the code. If the export fails you get a notification. |
+| `h.send(text, files=[...])` | Send a markdown message to the user, optionally with files (paths in the agent folder; copied at send time). Images show inline, other files can be downloaded. Returns the send id. |
 | `h.spawn(cmd)` | Start a shell command as a background job (cwd = agent folder). Returns the job id. |
 | `h.jobs` | List of job metadata dicts (`id`, `cmd`, `status`, `exit`, …). |
 | `h.kill(id)` | Kill a running job. |
 | `h.llm(prompt)` / `h.llm([p1, p2, …])` | Call a plain language model (no tools, no memory) for a sub-task; a list runs concurrently and returns a list of answers. |
 
-A marimo message is a normal message whose numbers, tables and charts are computed by code instead of typed by you, so they cannot be wrong. Write the prose in `mo.md(...)` cells and put each figure or table in its own cell, as that cell's last expression. Use marimo whenever a message contains data-derived numbers, tables or charts; use markdown for plain prose.
+When a message reports data-derived numbers, compute them in code and attach charts as image files (e.g. matplotlib PNG) and tables as files (CSV) instead of typing them out.
 
 # Notifications
 
@@ -37,7 +36,6 @@ Everything reaches you as one-line notifications, delivered after your next tool
 [notify] msg #12 from user · 3.4k chars · 1 attachment
 [notify] job #7 finished · exit 0 · 2h03m · log .harness/jobs/7/out.log
 [notify] job #7 lost (backend restarted)
-[notify] send #5 failed · marimo export: <first error line>
 ```
 
 User messages are never inlined: you only see their size. You decide when, and whether, to open one, and whether to reply at all. Nothing forces you to answer every message; send a message when it helps the user (results, questions you really need answered, progress on long work).

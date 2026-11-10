@@ -4,6 +4,7 @@ import fcntl
 import json
 import os
 import signal
+import shutil
 import subprocess
 import threading
 import time
@@ -65,15 +66,28 @@ inbox = Inbox()
 
 # --- outbox ----------------------------------------------------------------
 
-def send(content: str, backend: str = "markdown") -> int:
-    """Send a message to the user. backend="marimo": content is a notebook path in the agent folder."""
-    if backend not in ("markdown", "marimo"):
-        raise ValueError(f"unknown backend {backend!r} (use 'markdown' or 'marimo')")
+def send(text: str, files: list[str | Path] | None = None) -> int:
+    """Send a markdown message to the user, optionally with files (copied now; later edits don't change it)."""
+    paths = [Path(p) for p in files or []]
+    for p in paths:
+        if p.is_dir():
+            raise IsADirectoryError(str(p))
+        if not p.is_file():
+            raise FileNotFoundError(str(p))
+    names = [p.name for p in paths]
+    if len(set(names)) != len(names):
+        raise ValueError(f"duplicate file names in {names}")
     with open(_dir() / "outbox.jsonl", "a+") as f:
         fcntl.flock(f, fcntl.LOCK_EX)
         f.seek(0)
         sid = sum(1 for _ in f) + 1
-        f.write(json.dumps({"id": sid, "ts": time.time(), "backend": backend, "content": str(content)}) + "\n")
+        if paths:  # copy before the row exists, so the backend never sees a row with missing files
+            d = _dir() / "outbox" / str(sid)
+            d.mkdir(parents=True, exist_ok=True)
+            for p in paths:
+                shutil.copy2(p, d / p.name)
+        meta = [{"name": p.name, "size": (d / p.name).stat().st_size} for p in paths]
+        f.write(json.dumps({"id": sid, "ts": time.time(), "text": str(text), "files": meta}) + "\n")
     return sid
 
 

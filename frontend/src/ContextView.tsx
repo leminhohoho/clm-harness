@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { contextEdits, foldDiff, type DiffLine, type Ev } from "./derive";
+import { api, contextEdits, foldDiff, type DiffLine, type Ev } from "./derive";
 
 const CLS = { " ": "ln", "+": "ln add", "-": "ln del" } as const;
 
@@ -12,7 +12,7 @@ function Fold({ count, lines }: { count: number; lines: DiffLine[] }) {
   return <span className="ln fold" onClick={() => setOpen(true)}>⋯ {count} {what} lines hidden · click to expand</span>;
 }
 
-export function ContextView({ events }: { events: Ev[] }) {
+export function ContextView({ events, profile }: { events: Ev[]; profile: string }) {
   const edits = contextEdits(events);
   const [sel, setSel] = useState<number>();
   const cur = edits.find((e) => e.n === sel) ?? edits[0];
@@ -21,7 +21,7 @@ export function ContextView({ events }: { events: Ev[] }) {
   useEffect(() => {
     if (!cur) return;
     let live = true;
-    fetch(`/api/context-edits/${cur.n}`).then((r) => (r.ok ? r.json() : undefined)).then((d) => live && setDiff(d));
+    fetch(`${api(profile)}/context-edits/${cur.n}`).then((r) => (r.ok ? r.json() : undefined)).then((d) => live && setDiff(d));
     return () => void (live = false);
   }, [cur?.n]);
 
@@ -30,8 +30,8 @@ export function ContextView({ events }: { events: Ev[] }) {
   const added = lines.filter((l) => l.op === "+").length, removed = lines.filter((l) => l.op === "-").length;
 
   return (
-    <div className="view ctxview">
-      <nav className="edits">
+    <div className="view split">
+      <nav className="side">
         {edits.map((e) => (
           <button key={e.n} className={`edit ${e === cur ? "sel" : ""} ${e.ok ? "" : "rej"}`} onClick={() => setSel(e.n)}>
             <span className="t">edit #{e.n} · {e.ts ? new Date(e.ts * 1000).toTimeString().slice(0, 5) : ""}</span>

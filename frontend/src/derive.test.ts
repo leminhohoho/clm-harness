@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { chatItems, contextEdits, fmtCost, fmtDur, fmtTok, foldDiff, mergeEvents, runningJobs, type DiffLine, type Ev } from "./derive";
+import { chatItems, contextEdits, fmtCost, fmtDur, fmtSize, fmtTok, foldDiff, isImage, mergeEvents, rawUrl, runningJobs, timeOf, type DiffLine, type Ev } from "./derive";
 
 describe("formatters", () => {
   test("tokens", () => {
@@ -17,6 +17,17 @@ describe("formatters", () => {
     expect(fmtDur(192)).toBe("3m12s");
     expect(fmtDur(11520)).toBe("3h12m");
   });
+  test("file sizes", () => {
+    expect(fmtSize(0)).toBe("0 B");
+    expect(fmtSize(1023)).toBe("1023 B");
+    expect(fmtSize(1536)).toBe("1.5 KB");
+    expect(fmtSize(2.5 * 1024 * 1024)).toBe("2.5 MB");
+    expect(fmtSize(3 * 1024 ** 3)).toBe("3.0 GB");
+  });
+  test("bubble time is local HH:MM, blank without ts", () => {
+    expect(timeOf(new Date(2026, 0, 1, 9, 5).getTime() / 1000)).toBe("09:05");
+    expect(timeOf(undefined)).toBe("");
+  });
 });
 
 test("chat shows user and agent messages only, with opened markers", () => {
@@ -25,12 +36,23 @@ test("chat shows user and agent messages only, with opened markers", () => {
     { seq: 2, type: "notification", nseq: 1, text: "[notify] …" },
     { seq: 3, type: "llm_reasoning", text: "thinking" },
     { seq: 4, type: "message_opened", id: 1 },
-    { seq: 5, type: "agent_message", id: 1, backend: "markdown", text: "**yo**" },
+    { seq: 5, type: "agent_message", id: 1, text: "**yo**", files: [{ name: "a.png", size: 3 }] },
     { seq: 6, type: "user_message", id: 2, text: "more", attachments: [] },
   ]);
   expect(items.map((i) => [i.type, i.id])).toEqual([["user_message", 1], ["agent_message", 1], ["user_message", 2]]);
   expect(items[0]).toMatchObject({ opened: true });
+  expect(items[1]).toMatchObject({ files: [{ name: "a.png", size: 3 }] });
   expect(items[2]).toMatchObject({ opened: false });
+});
+
+test("images are recognised by extension, case-insensitively", () => {
+  expect(["a.png", "B.JPG", "c.jpeg", "d.gif", "e.webp", "f.svg"].every(isImage)).toBe(true);
+  expect(["a.csv", "png", "x.png.txt", "y.svgz"].some(isImage)).toBe(false);
+});
+
+test("rawUrl encodes each path segment but keeps the slashes", () => {
+  expect(rawUrl("p1", ".harness/outbox/3/a b#1.png")).toBe("/api/p/p1/raw/.harness/outbox/3/a%20b%231.png");
+  expect(rawUrl("p1", "x?.csv", true)).toBe("/api/p/p1/raw/x%3F.csv?download=1");
 });
 
 test("running jobs follow job updates", () => {

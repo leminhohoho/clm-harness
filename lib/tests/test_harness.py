@@ -57,15 +57,33 @@ def test_send_appends_with_unique_ids(hdir):
     [t.start() for t in threads]
     [t.join() for t in threads]
     assert sorted(ids) == list(range(1, 21))
-    assert h.send("nb.py", backend="marimo") == 21
     rows = [json.loads(l) for l in (hdir / "outbox.jsonl").read_text().splitlines()]
-    assert rows[-1]["backend"] == "marimo" and rows[-1]["content"] == "nb.py" and rows[-1]["id"] == 21
-    assert rows[0]["backend"] == "markdown" and rows[0]["content"] == "hi"
+    assert rows[0]["text"] == "hi" and rows[0]["files"] == []
 
 
-def test_send_rejects_unknown_backend(hdir):
-    with pytest.raises(ValueError):
-        h.send("x", backend="html")
+def test_send_copies_files_at_send_time(hdir, tmp_path):
+    (tmp_path / "plot.png").write_bytes(b"png")
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "sub/t.csv").write_text("1,2")
+    sid = h.send("see", files=["plot.png", tmp_path / "sub/t.csv"])
+    (tmp_path / "plot.png").write_bytes(b"changed")
+    assert (hdir / f"outbox/{sid}/plot.png").read_bytes() == b"png"
+    assert (hdir / f"outbox/{sid}/t.csv").read_text() == "1,2"
+    row = json.loads((hdir / "outbox.jsonl").read_text())
+    assert row["id"] == sid and row["text"] == "see"
+    assert row["files"] == [{"name": "plot.png", "size": 3}, {"name": "t.csv", "size": 3}]
+
+
+@pytest.mark.parametrize("files, err", [(["missing.png"], FileNotFoundError), (["sub"], IsADirectoryError),
+                                        (["a.txt", "sub/a.txt"], ValueError)])
+def test_send_rejects_bad_files_before_writing(hdir, tmp_path, files, err):
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "a.txt").write_text("x")
+    (tmp_path / "sub/a.txt").write_text("y")
+    with pytest.raises(err):
+        h.send("x", files=files)
+    assert not (hdir / "outbox.jsonl").exists() or not (hdir / "outbox.jsonl").read_text()
+    assert not (hdir / "outbox").exists()
 
 
 def test_spawn_runs_in_cwd_and_records_exit(hdir, tmp_path):

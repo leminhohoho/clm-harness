@@ -34,10 +34,6 @@ def lost_stub(i: int) -> str:
     return f"[notify] job #{i} lost (backend restarted)"
 
 
-def send_failed_stub(i: int, err: str) -> str:
-    return f"[notify] send #{i} failed · marimo export: {err}"
-
-
 class Notifier:
     def __init__(self, path: Path, state: State, events: Events, on_new: Callable[[], None] = lambda: None):
         self.path, self.state, self.events, self.on_new = path, state, events, on_new

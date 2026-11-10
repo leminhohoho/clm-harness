@@ -2,13 +2,20 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
-import { chatItems, type ChatItem, type Ev } from "./derive";
+import { api, chatItems, fmtSize, isImage, rawUrl, timeOf, type ChatItem, type Ev } from "./derive";
 
 export const Md = ({ text }: { text: string }) => (
   <div className="md">
     <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>{text}</ReactMarkdown>
   </div>
 );
+
+const Icon = ({ d, size = 24 }: { d: string; size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden><path d={d} /></svg>
+);
+const CLIP = "M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5c0-1.38 1.12-2.5 2.5-2.5s2.5 1.12 2.5 2.5v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5c0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z";
+const PLANE = "M2.01 21 23 12 2.01 3 2 10l15 2-15 2z";
+const FILE = "M6 2c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6H6zm7 7V3.5L18.5 9H13z";
 
 export function useStickyScroll(dep: unknown) {
   const ref = useRef<HTMLDivElement>(null);
@@ -17,7 +24,7 @@ export function useStickyScroll(dep: unknown) {
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    // content can grow after render (marimo frames report their height late): keep following the bottom
+    // content can grow after render (images load late): keep following the bottom
     const follow = () => void (stick.current && (el.scrollTop = el.scrollHeight));
     follow();
     const ro = new ResizeObserver(follow);
@@ -34,44 +41,51 @@ export function useStickyScroll(dep: unknown) {
   return { ref, onScroll };
 }
 
-function Marimo({ title, src }: { title: string; src: string }) {
-  const ref = useRef<HTMLIFrameElement>(null);
-  const [height, setHeight] = useState(120);
-  useEffect(() => {
-    const onMsg = (e: MessageEvent) => {
-      if (e.source === ref.current?.contentWindow && e.data?.type === "marimo-height") setHeight(Math.ceil(e.data.height));
-    };
-    window.addEventListener("message", onMsg);
-    return () => window.removeEventListener("message", onMsg);
-  }, []);
-  return <iframe ref={ref} className="marimo" title={title} src={src} style={{ height }}
-    sandbox="allow-scripts allow-popups allow-downloads" />;
-}
-
-function Item({ item, theme }: { item: ChatItem; theme: string }) {
-  if (item.type === "user_message")
-    return (
-      <div className="msg you">
-        <div className="bubble pre">{item.text}</div>
-        <div className="meta">
-          {item.attachments.map((a) => (
-            <a key={a} className="chip" href={`/api/inbox/${item.id}/files/${encodeURIComponent(a)}`} target="_blank" rel="noreferrer">
-              {a}
-            </a>
-          ))}
-          {item.opened ? <span className="ok">✓ opened</span> : <span className="dim">unopened</span>}
-        </div>
-      </div>
-    );
+/** Images inline (click opens raw), other files as download rows; same for both directions. */
+function Attachments({ profile, dir, files }: { profile: string; dir: string; files: { name: string; size?: number }[] }) {
+  if (!files.length) return null;
   return (
-    <div className="msg agent">
-      <div className="who">agent</div>
-      {item.backend === "markdown" ? <Md text={item.text} /> : <Marimo title={item.path} src={`${item.url}?theme=${theme}`} />}
+    <div className="att">
+      {files.map(({ name, size }) => {
+        const path = `${dir}/${name}`;
+        return isImage(name) ? (
+          <a key={name} href={rawUrl(profile, path)} target="_blank" rel="noreferrer"><img src={rawUrl(profile, path)} alt={name} /></a>
+        ) : (
+          <a key={name} className="fileref" href={rawUrl(profile, path, true)}>
+            <span className="ic"><Icon d={FILE} size={20} /></span>
+            <span><b>{name}</b>{size != null && <span className="dim">{fmtSize(size)}</span>}</span>
+          </a>
+        );
+      })}
     </div>
   );
 }
 
-export function ChatView({ events, theme }: { events: Ev[]; theme: string }) {
+function Item({ item, profile }: { item: ChatItem; profile: string }) {
+  if (item.type === "user_message")
+    return (
+      <div className="msg you">
+        <div className="bubble out">
+          <Attachments profile={profile} dir={`.harness/inbox/${item.id}/files`} files={item.attachments.map((name) => ({ name }))} />
+          {item.text && <span className="pre">{item.text}</span>}
+          <span className="meta" title={item.opened ? "opened by the agent" : "not opened yet"}>
+            {timeOf(item.ts)} {item.opened ? "✓✓" : "✓"}
+          </span>
+        </div>
+      </div>
+    );
+  return (
+    <div className="msg">
+      <div className="bubble in">
+        <Attachments profile={profile} dir={`.harness/outbox/${item.id}`} files={item.files} />
+        <Md text={item.text} />
+        <span className="meta">{timeOf(item.ts)}</span>
+      </div>
+    </div>
+  );
+}
+
+export function ChatView({ events, profile }: { events: Ev[]; profile: string }) {
   const items = chatItems(events);
   const { ref, onScroll } = useStickyScroll(items.length);
   const [text, setText] = useState("");
@@ -86,7 +100,7 @@ export function ChatView({ events, theme }: { events: Ev[]; theme: string }) {
     files.forEach((f) => form.append("files", f));
     setBusy(true);
     try {
-      const r = await fetch("/api/messages", { method: "POST", body: form });
+      const r = await fetch(`${api(profile)}/messages`, { method: "POST", body: form });
       if (r.ok) {
         setText("");
         setFiles([]);
@@ -106,7 +120,7 @@ export function ChatView({ events, theme }: { events: Ev[]; theme: string }) {
     <div className="view">
       <div className="scroll chat" ref={ref} onScroll={onScroll}>
         {items.length === 0 && <div className="dim empty">no messages yet — the agent idles until you write.</div>}
-        {items.map((it) => <Item key={`${it.type}${it.seq}`} item={it} theme={theme} />)}
+        {items.map((it) => <Item key={`${it.type}${it.seq}`} item={it} profile={profile} />)}
       </div>
       <div
         className="composer"
@@ -116,23 +130,29 @@ export function ChatView({ events, theme }: { events: Ev[]; theme: string }) {
           setFiles((f) => [...f, ...Array.from(e.dataTransfer.files)]);
         }}
       >
-        <textarea
-          autoFocus
-          rows={Math.min(8, text.split("\n").length)}
-          value={text}
-          placeholder="message the agent (enter to send, shift+enter newline, drop files)"
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={onKey}
-        />
-        {files.map((f, i) => (
-          <button key={i} className="chip" title="remove" onClick={() => setFiles(files.filter((_, j) => j !== i))}>
-            {f.name} ×
-          </button>
-        ))}
-        <button onClick={() => fileInput.current?.click()} title="attach files">+ file</button>
-        <input ref={fileInput} type="file" multiple hidden
-          onChange={(e) => setFiles((f) => [...f, ...Array.from(e.target.files ?? [])])} />
-        <button className="primary" onClick={() => void send()} disabled={busy}>Send</button>
+        {files.length > 0 && (
+          <div className="pending">
+            {files.map((f, i) => (
+              <button key={i} className="chip" title="remove" onClick={() => setFiles(files.filter((_, j) => j !== i))}>
+                {f.name} ×
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="bar-in">
+          <button className="icon" onClick={() => fileInput.current?.click()} title="attach files"><Icon d={CLIP} /></button>
+          <input ref={fileInput} type="file" multiple hidden
+            onChange={(e) => setFiles((f) => [...f, ...Array.from(e.target.files ?? [])])} />
+          <textarea
+            autoFocus
+            rows={Math.min(8, text.split("\n").length)}
+            value={text}
+            placeholder="Message (enter to send, shift+enter newline, drop files)"
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={onKey}
+          />
+          <button className="icon send" onClick={() => void send()} disabled={busy} title="send"><Icon d={PLANE} size={22} /></button>
+        </div>
       </div>
     </div>
   );

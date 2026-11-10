@@ -3,6 +3,7 @@
 import asyncio
 import json
 import os
+import signal
 import time
 from pathlib import Path
 
@@ -156,3 +157,13 @@ class Executor:
                 changed = True
         if changed:
             self._sync_count()
+
+    def kill_all(self) -> None:
+        """Kill every running job (profile deletion); same as harness.kill without the global HARNESS_DIR."""
+        for jid in sorted(self.running):
+            m = self._update(jid, status="killed", end=time.time())
+            try:
+                os.killpg(m["pid"], signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+        self.running.clear()

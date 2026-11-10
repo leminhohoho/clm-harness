@@ -1,9 +1,7 @@
 type Base = { seq: number; ts?: number };
 export type UserMsg = Base & { type: "user_message"; id: number; text: string; attachments: string[] };
-export type AgentMsg = Base & { type: "agent_message"; id: number } & (
-  | { backend: "markdown"; text: string }
-  | { backend: "marimo"; path: string; url: string }
-);
+export type FileRef = { name: string; size: number };
+export type AgentMsg = Base & { type: "agent_message"; id: number; text: string; files: FileRef[] };
 export type ContextEdit = Base & { type: "context_edit"; ok: boolean; receipt: string; before?: number; after?: number; n?: number };
 export type Ev =
   | UserMsg
@@ -20,7 +18,7 @@ export type Ev =
       cost: number | null; latency: number;
     })
   | (Base & { type: "message_opened"; id: number })
-  | (Base & { type: "error"; text: string; send?: number; log?: string });
+  | (Base & { type: "error"; text: string });
 
 export type Metrics = {
   type: "metrics";
@@ -46,6 +44,23 @@ export function fmtDur(s: number) {
 }
 
 export const pct = (x: number) => `${Math.round(x * 100)}%`;
+
+export function fmtSize(n: number) {
+  const units = ["KB", "MB", "GB"];
+  if (n < 1024) return `${n} B`;
+  let i = -1;
+  while (n >= 1024 && i < units.length - 1) (n /= 1024), i++;
+  return `${n.toFixed(1)} ${units[i]}`;
+}
+
+export const timeOf = (ts?: number) => (ts ? new Date(ts * 1000).toTimeString().slice(0, 5) : "");
+
+export const isImage = (name: string) => /\.(png|jpe?g|gif|webp|svg)$/i.test(name);
+
+export const api = (profile: string) => `/api/p/${encodeURIComponent(profile)}`;
+
+export const rawUrl = (profile: string, path: string, download = false) =>
+  `${api(profile)}/raw/${path.split("/").map(encodeURIComponent).join("/")}${download ? "?download=1" : ""}`;
 
 export type ChatItem = (UserMsg & { opened: boolean }) | AgentMsg;
 

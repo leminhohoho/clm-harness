@@ -1,21 +1,5 @@
-import json
-
 from backend.events import State, tail
-from backend.outbox import Outbox, themed
-from conftest import until
-
-NB = '''import marimo
-app = marimo.App()
-
-@app.cell
-def _():
-    import marimo as mo
-    mo.md("# hi")  # code-only-marker
-    return
-
-if __name__ == "__main__":
-    app.run()
-'''
+from backend.outbox import Outbox
 
 
 def test_tail_consumes_only_complete_lines(tmp_path):
@@ -30,64 +14,17 @@ def test_tail_consumes_only_complete_lines(tmp_path):
 
 
 def ob(parts):
-    return Outbox(parts.agent, parts.state, parts.events, parts.notifier)
+    return Outbox(parts.hdir, parts.state, parts.events)
 
 
-async def test_markdown_send_emits_agent_message_once(parts):
+def test_send_emits_agent_message_with_files_once(parts, monkeypatch):
     import harness
+    monkeypatch.chdir(parts.agent)
+    (parts.agent / "plot.png").write_bytes(b"png")
     harness.send("**hi**")
+    harness.send("chart", files=["plot.png"])
     ob(parts).poll()
     ob(parts).poll()
-    msgs = parts.of("agent_message")
-    assert len(msgs) == 1 and msgs[0]["id"] == 1 and msgs[0]["backend"] == "markdown" and msgs[0]["text"] == "**hi**"
-
-
-async def test_marimo_send_exports_html(parts):
-    import harness
-    (parts.agent / "nb.py").write_text(NB)
-    harness.send("nb.py", backend="marimo")
-    o = ob(parts)
-    o.poll()
-    assert await until(lambda: parts.of("agent_message"), timeout=180)
-    m = parts.of("agent_message")[0]
-    assert m["backend"] == "marimo" and m["url"] == "/api/outbox/1.html" and m["path"] == "nb.py"
-    html = (parts.hdir / "outbox/1.html").read_text()
-    assert "<marimo-code" in html and "code-only-marker" not in html  # outputs only, code never shipped
-
-
-async def test_marimo_export_failure_notifies_agent(parts):
-    import harness
-    harness.send("missing.py", backend="marimo")
-    o = ob(parts)
-    o.poll()
-    assert await until(parts.notifier.has_pending, timeout=180)
-    stub = parts.notifier.deliver()[0]
-    assert stub.startswith("[notify] send #1 failed · marimo export: ") and len(stub) > 45
-    assert parts.of("error")[0]["send"] == 1
-    assert not parts.of("agent_message")
-
-
-def test_themed_sets_mode_and_injects_css():
-    html = '<html lang="en"><head><title>x</title></head><body><marimo-user-config data-config=\'{"display": {"theme": "light"}}\'></body></html>'
-    out = themed(html, "/*CSS*/", "dark")
-    assert '<html data-theme="dark" lang="en">' in out
-    assert '"theme": "dark"' in out and '"theme": "light"' not in out
-    assert "<style>/*CSS*/</style>" in out
-    assert '"theme": "light"' in themed(html, "", "light")
-
-
-def test_themed_injects_height_reporter_into_head():
-    out = themed("<html><head></head><body></body></html>", "", "light")
-    head = out.split("</head>")[0]
-    assert "ResizeObserver" in head and 'type: "marimo-height"' in head and "parent.postMessage" in head
-
-
-async def test_messages_are_delivered_in_send_order(parts):
-    import harness
-    (parts.agent / "nb.py").write_text(NB)
-    harness.send("nb.py", backend="marimo")
-    harness.send("after the notebook")
-    o = ob(parts)
-    o.poll()
-    assert await until(lambda: len(parts.of("agent_message")) == 2, timeout=180, tick=o.poll)
-    assert [m["id"] for m in parts.of("agent_message")] == [1, 2]
+    msgs = [{k: m[k] for k in ("id", "text", "files")} for m in parts.of("agent_message")]
+    assert msgs == [{"id": 1, "text": "**hi**", "files": []},
+                    {"id": 2, "text": "chart", "files": [{"name": "plot.png", "size": 3}]}]

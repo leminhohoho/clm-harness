@@ -1,30 +1,23 @@
-"""HTTP routes + WebSocket; wires the agent loop and the background watcher."""
+"""HTTP routes + WebSocket over a registry of profiles (one agent runtime each)."""
 
 import asyncio
 import json
-import logging
 import os
-import subprocess
 import time
+import urllib.request
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse
+from pydantic import BaseModel
 
 from harness import write_json
 
 from .context import diff_lines
-from .events import Events, State, tail
-from .executor import Executor
-from .loop import Agent
-from .metrics import Metrics
-from .notify import Notifier, msg_stub
-from .outbox import Outbox, themed
+from .notify import msg_stub
+from .profiles import Profiles, Runtime
 
-log = logging.getLogger("backend")
-PROMPT = Path(__file__).parent / "prompts" / "system.md"
-THEME_CSS = Path(__file__).resolve().parents[3] / "frontend" / "src" / "marimo-theme.css"
 TOOL = {"type": "function", "function": {
     "name": "python",
     "description": "Run Python code as a fresh `uv run` process in the agent folder (`import harness as h`). "
@@ -32,121 +25,141 @@ TOOL = {"type": "function", "function": {
     "parameters": {"type": "object", "properties": {"code": {"type": "string", "description": "Python source"}},
                    "required": ["code"]},
 }}
+FALLBACK_MODEL = "deepseek/deepseek-v4.1-flash"
+RAW_HEADERS = {"Content-Security-Policy": "sandbox", "X-Content-Type-Options": "nosniff"}
 
 
-def default_model():
+def default_model(model_id: str):
     from langchain_openai import ChatOpenAI
-    return ChatOpenAI(model=os.environ["MODEL"], base_url=os.environ.get("OPENAI_BASE_URL"),
+    return ChatOpenAI(model=model_id, base_url=os.environ.get("OPENAI_BASE_URL"),
                       api_key=os.environ.get("OPENAI_API_KEY"), timeout=600, max_retries=2).bind_tools([TOOL])
 
 
-def create_app(agent_dir: Path | None = None, model=None) -> FastAPI:
-    agent = Path(agent_dir or os.environ.get("AGENT_DIR", "/agent")).resolve()
-    hdir = agent / ".harness"
-    budget = int(os.environ.get("CONTEXT_BUDGET", "200000"))
-    s: dict = {}
+def gateway_models() -> list[str]:
+    """Model ids the gateway serves on /chat/completions (claude-*/gpt-* are listed but don't work there)."""
+    req = urllib.request.Request(os.environ.get("OPENAI_BASE_URL", "").rstrip("/") + "/models", headers={
+        "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY', '')}", "User-Agent": "clm-harness/1.0"})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        ids = [m["id"] for m in json.load(r)["data"]]
+    return [i for i in ids if not i.startswith(("claude-", "gpt-"))]
 
-    async def watch():
-        while True:
-            try:
-                s["executor"].poll()
-                s["outbox"].poll()
-                for u in tail(hdir / "usage.jsonl", s["state"], "usage_pos"):
-                    s["metrics"].usage("sub", u["model"], u["in"], u["out"], u["cached"], u["latency"])
-                opened = s["state"].data.setdefault("opened", [])
-                for d in (hdir / "inbox").iterdir() if (hdir / "inbox").exists() else []:
-                    if int(d.name) not in opened and (d / "opened").exists():
-                        opened.append(int(d.name))
-                        s["state"].save()
-                        s["events"].emit("message_opened", id=int(d.name))
-            except Exception:
-                log.exception("watcher")
-            await asyncio.sleep(0.5)
+
+def inside(r: Runtime, path: str) -> Path:
+    """`path` resolved within the profile folder (symlinks followed), else 404."""
+    p = (r.dir / path).resolve()
+    if not p.is_relative_to(r.dir):
+        raise HTTPException(404)
+    return p
+
+
+class NewProfile(BaseModel):
+    name: str
+    model: str | None = None
+
+
+def create_app(data_dir: Path | None = None, model_factory=None) -> FastAPI:
+    profiles = Profiles(Path(data_dir or os.environ.get("DATA_DIR", "/data")), model_factory or default_model)
+    models: list[str] = []
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        hdir.mkdir(parents=True, exist_ok=True)
-        if not (agent / "pyproject.toml").exists():
-            subprocess.run(["uv", "init", "-q", "--bare", "--name", "agent", "--no-workspace"], cwd=agent, check=True)
-        state, events = State(hdir / "state.json"), Events(hdir / "events.jsonl")
-        notifier = Notifier(hdir / "notifications.jsonl", state, events)
-        metrics = Metrics(state, events, budget, json.loads(os.environ.get("PRICES") or "{}"))
-        timeout = float(os.environ.get("FOREGROUND_TIMEOUT", "60"))
-        executor = Executor(agent, notifier, events, metrics, timeout)
-        executor.startup()
-        system = PROMPT.read_text().replace("{FOREGROUND_TIMEOUT}", f"{timeout:g}")
-        loop = Agent(hdir, system, model or default_model(), os.environ.get("MODEL", ""), executor,
-                     notifier, events, metrics, budget)
-        notifier.on_new = loop.poke
-        s.update(state=state, events=events, notifier=notifier, metrics=metrics, executor=executor, agent=loop,
-                 outbox=Outbox(agent, state, events, notifier))
-        tasks = [asyncio.create_task(loop.run_forever()), asyncio.create_task(watch())]
+        profiles.load()
         yield
-        for t in tasks:
-            t.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
+        await profiles.stop_all()
 
     app = FastAPI(lifespan=lifespan)
 
-    @app.post("/api/messages")
-    async def post_message(text: str = Form(""), files: list[UploadFile] = []):
-        root = hdir / "inbox"
+    @app.get("/api/profiles")
+    async def list_profiles():
+        return profiles.list()
+
+    @app.post("/api/profiles")
+    async def create_profile(p: NewProfile):
+        return profiles.create(p.name, p.model or os.environ.get("DEFAULT_MODEL", FALLBACK_MODEL)).info()
+
+    @app.delete("/api/profiles/{name}")
+    async def delete_profile(name: str):
+        await profiles.delete(name)
+        return {"ok": True}
+
+    @app.get("/api/models")
+    async def list_models():
+        if not models:
+            try:
+                models.extend(await asyncio.to_thread(gateway_models))
+            except Exception:
+                return []
+        return models
+
+    @app.post("/api/p/{name}/messages")
+    async def post_message(name: str, text: str = Form(""), files: list[UploadFile] = []):
+        r = profiles.get(name)
+        root = r.hdir / "inbox"
         root.mkdir(exist_ok=True)
         i = max((int(p.name) for p in root.iterdir()), default=0) + 1
         d = root / str(i)
         (d / "files").mkdir(parents=True)
         names = []
         for f in files:
-            name = Path(f.filename or "").name
-            if name:
-                (d / "files" / name).write_bytes(await f.read())
-                names.append(name)
+            fname = Path(f.filename or "").name
+            if fname:
+                (d / "files" / fname).write_bytes(await f.read())
+                names.append(fname)
         write_json(d / "message.json", {"id": i, "text": text, "ts": time.time(), "attachments": names})
-        s["events"].emit("user_message", id=i, text=text, attachments=names)
-        s["notifier"].add(msg_stub(i, len(text), len(names)), msg=i)
+        r.events.emit("user_message", id=i, text=text, attachments=names)
+        r.notifier.add(msg_stub(i, len(text), len(names)), msg=i)
         return {"id": i}
 
-    @app.get("/api/inbox/{i}/files/{name}")
-    async def attachment(i: int, name: str):
-        p = hdir / "inbox" / str(i) / "files" / name
-        if Path(name).name != name or not p.is_file():
-            raise HTTPException(404)
-        return FileResponse(p)
-
-    @app.get("/api/outbox/{i}.html")
-    async def outbox_html(i: int, theme: str = "light"):
-        p = hdir / "outbox" / f"{i}.html"
-        if not p.is_file():
-            raise HTTPException(404)
-        css_path = Path(os.environ.get("MARIMO_THEME_CSS", THEME_CSS))
-        css = css_path.read_text() if css_path.is_file() else ""
-        return HTMLResponse(themed(p.read_text(), css, "dark" if theme == "dark" else "light"))
-
-    @app.get("/api/context-edits/{n}")
-    async def context_edit(n: int):
+    @app.get("/api/p/{name}/context-edits/{n}")
+    async def context_edit(name: str, n: int):
+        hdir = profiles.get(name).hdir
         b, a = (hdir / "context-edits" / f"{n}.{k}.md" for k in ("before", "after"))
         if not (b.is_file() and a.is_file()):
             raise HTTPException(404)
         return {"n": n, "lines": diff_lines(b.read_text(), a.read_text())}
 
-    @app.get("/api/metrics")
-    async def get_metrics():
-        return s["metrics"].snapshot()
+    @app.get("/api/p/{name}/metrics")
+    async def get_metrics(name: str):
+        return profiles.get(name).metrics.snapshot()
 
-    @app.post("/api/agent/stop")
-    async def stop():
-        s["agent"].stop()
+    @app.post("/api/p/{name}/agent/stop")
+    async def stop(name: str):
+        profiles.get(name).agent.stop()
         return {"ok": True}
 
-    @app.websocket("/ws")
-    async def ws(sock: WebSocket, after: int = 0):
+    @app.get("/api/p/{name}/tree")
+    async def tree(name: str, path: str = ""):
+        d = inside(profiles.get(name), path)
+        if not d.is_dir():
+            raise HTTPException(404)
+        out = []
+        for e in d.iterdir():
+            try:
+                st, isdir = e.stat(), e.is_dir()
+            except OSError:  # dangling symlink
+                continue
+            out.append({"name": e.name, "dir": isdir, "size": 0 if isdir else st.st_size, "mtime": st.st_mtime})
+        return sorted(out, key=lambda e: (not e["dir"], e["name"].lower()))
+
+    @app.get("/api/p/{name}/raw/{path:path}")
+    async def raw(name: str, path: str, download: bool = False):
+        p = inside(profiles.get(name), path)
+        if not p.is_file():
+            raise HTTPException(404)
+        return FileResponse(p, headers=RAW_HEADERS, filename=p.name if download else None)
+
+    @app.websocket("/ws/{name}")
+    async def ws(sock: WebSocket, name: str, after: int = 0):
         await sock.accept()
-        q = s["events"].subscribe()
+        r = profiles.runtimes.get(name)
+        if r is None:
+            return await sock.close(code=4404)
+        q = r.events.subscribe()
 
         async def pump():
-            await sock.send_json(s["metrics"].snapshot())
+            await sock.send_json(r.metrics.snapshot())
             last = after
-            for e in s["events"].since(after):
+            for e in r.events.since(after):
                 await sock.send_json(e)
                 last = e["seq"]
             while True:
@@ -165,6 +178,6 @@ def create_app(agent_dir: Path | None = None, model=None) -> FastAPI:
             pass
         finally:
             sender.cancel()
-            s["events"].unsubscribe(q)
+            r.events.unsubscribe(q)
 
     return app

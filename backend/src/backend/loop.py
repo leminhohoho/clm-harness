@@ -126,14 +126,19 @@ class Agent:
         text = self.ctx.read_text() if self.ctx.exists() else self.rendered
         if text == self.rendered:
             return ""
+        snaps = self.ctx.parent / "context-edits"
+        snaps.mkdir(exist_ok=True)
+        n = len(list(snaps.glob("*.after.md"))) + 1
+        (snaps / f"{n}.before.md").write_text(self.rendered or "")
+        (snaps / f"{n}.after.md").write_text(text)
         before, n_before = tokens(self.rendered or ""), len(self.messages)
         try:
             new = parse(text)
         except ParseError as e:
-            self.events.emit("context_edit", ok=False, receipt=f"rejected: {e}")
+            self.events.emit("context_edit", ok=False, receipt=f"rejected: {e}", n=n)
             return f"[context edit rejected: {e}; previous context kept]"
         self.messages, after = new, tokens(render(new))
         receipt = f"[context edited] {n_before} → {len(new)} turns · {fmt_tok(before)} → {fmt_tok(after)} tokens"
         self.metrics.bump(edits=1, freed=max(0, before - after))
-        self.events.emit("context_edit", ok=True, receipt=receipt, before=before, after=after)
+        self.events.emit("context_edit", ok=True, receipt=receipt, before=before, after=after, n=n)
         return receipt

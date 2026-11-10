@@ -77,6 +77,23 @@ async def test_killed_job_is_not_notified(parts):
     assert not parts.notifier.has_pending()
 
 
+async def test_kill_all_kills_running_jobs(parts):
+    import os
+    e = ex(parts)
+    jids = [harness.spawn("sleep 30"), harness.spawn("sleep 30")]
+    e.poll()
+    e.kill_all()
+    assert [meta(parts, j)["status"] for j in jids] == ["killed", "killed"]
+
+    def gone(pid):
+        try:
+            os.killpg(pid, 0)
+        except ProcessLookupError:
+            return True
+        return False
+    assert await until(lambda: all(gone(meta(parts, j)["pid"]) for j in jids))
+
+
 async def test_startup_marks_dead_jobs_lost(parts):
     jd = parts.hdir / "jobs/3"
     jd.mkdir(parents=True)

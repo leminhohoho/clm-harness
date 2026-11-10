@@ -13,50 +13,60 @@ export const Md = ({ text }: { text: string }) => (
 export function useStickyScroll(dep: unknown) {
   const ref = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
+  const last = useRef(0);
   useEffect(() => {
     const el = ref.current;
-    if (el && stick.current) el.scrollTop = el.scrollHeight;
+    if (!el) return;
+    // content can grow after render (marimo frames report their height late): keep following the bottom
+    const follow = () => void (stick.current && (el.scrollTop = el.scrollHeight));
+    follow();
+    const ro = new ResizeObserver(follow);
+    for (const c of el.children) ro.observe(c);
+    return () => ro.disconnect();
   }, [dep]);
   const onScroll = () => {
     const el = ref.current;
-    if (el) stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+    if (!el) return;
+    // only scrolling up unsticks: our own scroll's event can land after the content grew again
+    stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40 || (stick.current && el.scrollTop >= last.current);
+    last.current = el.scrollTop;
   };
   return { ref, onScroll };
+}
+
+function Marimo({ title, src }: { title: string; src: string }) {
+  const ref = useRef<HTMLIFrameElement>(null);
+  const [height, setHeight] = useState(120);
+  useEffect(() => {
+    const onMsg = (e: MessageEvent) => {
+      if (e.source === ref.current?.contentWindow && e.data?.type === "marimo-height") setHeight(Math.ceil(e.data.height));
+    };
+    window.addEventListener("message", onMsg);
+    return () => window.removeEventListener("message", onMsg);
+  }, []);
+  return <iframe ref={ref} className="marimo" title={title} src={src} style={{ height }}
+    sandbox="allow-scripts allow-popups allow-downloads" />;
 }
 
 function Item({ item, theme }: { item: ChatItem; theme: string }) {
   if (item.type === "user_message")
     return (
-      <div className="row">
-        <span className="who you">you</span>
-        <span className="gt">›</span>
-        <div className="body">
-          <div className="pre">{item.text}</div>
-          <div className="meta">
-            {item.attachments.map((a) => (
-              <a key={a} href={`/api/inbox/${item.id}/files/${encodeURIComponent(a)}`} target="_blank" rel="noreferrer">
-                [{a}]
-              </a>
-            ))}
-            {item.opened ? <span className="ok">✓opened</span> : <span className="dim">unopened</span>}
-          </div>
+      <div className="msg you">
+        <div className="bubble pre">{item.text}</div>
+        <div className="meta">
+          {item.attachments.map((a) => (
+            <a key={a} className="chip" href={`/api/inbox/${item.id}/files/${encodeURIComponent(a)}`} target="_blank" rel="noreferrer">
+              {a}
+            </a>
+          ))}
+          {item.opened ? <span className="ok">✓ opened</span> : <span className="dim">unopened</span>}
         </div>
       </div>
     );
   return (
-    <div className="row">
-      <span className="who agent">agent</span>
-      <span className="gt">›</span>
-      <div className="body">
-        {item.backend === "markdown" ? (
-          <Md text={item.text} />
-        ) : (
-          <figure className="marimo">
-            <figcaption>marimo · {item.path}</figcaption>
-            <iframe title={item.path} src={`${item.url}?theme=${theme}`} sandbox="allow-scripts allow-popups allow-downloads" />
-          </figure>
-        )}
-      </div>
+    <div className="msg agent">
+      <div className="who">agent</div>
+      {item.backend === "markdown" ? <Md text={item.text} /> : <Marimo title={item.path} src={`${item.url}?theme=${theme}`} />}
     </div>
   );
 }
@@ -94,7 +104,7 @@ export function ChatView({ events, theme }: { events: Ev[]; theme: string }) {
 
   return (
     <div className="view">
-      <div className="scroll" ref={ref} onScroll={onScroll}>
+      <div className="scroll chat" ref={ref} onScroll={onScroll}>
         {items.length === 0 && <div className="dim empty">no messages yet — the agent idles until you write.</div>}
         {items.map((it) => <Item key={`${it.type}${it.seq}`} item={it} theme={theme} />)}
       </div>
@@ -106,7 +116,6 @@ export function ChatView({ events, theme }: { events: Ev[]; theme: string }) {
           setFiles((f) => [...f, ...Array.from(e.dataTransfer.files)]);
         }}
       >
-        <span className="gt">›</span>
         <textarea
           autoFocus
           rows={Math.min(8, text.split("\n").length)}
@@ -117,13 +126,13 @@ export function ChatView({ events, theme }: { events: Ev[]; theme: string }) {
         />
         {files.map((f, i) => (
           <button key={i} className="chip" title="remove" onClick={() => setFiles(files.filter((_, j) => j !== i))}>
-            [{f.name}] ×
+            {f.name} ×
           </button>
         ))}
-        <button onClick={() => fileInput.current?.click()} title="attach files">+file</button>
+        <button className="ghost" onClick={() => fileInput.current?.click()} title="attach files">+ file</button>
         <input ref={fileInput} type="file" multiple hidden
           onChange={(e) => setFiles((f) => [...f, ...Array.from(e.target.files ?? [])])} />
-        <button onClick={() => void send()} disabled={busy}>send</button>
+        <button className="primary" onClick={() => void send()} disabled={busy}>Send</button>
       </div>
     </div>
   );

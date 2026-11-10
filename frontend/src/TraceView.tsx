@@ -22,11 +22,11 @@ function Output({ text }: { text: string }) {
 function Line({ e }: { e: Ev }) {
   switch (e.type) {
     case "user_message":
-      return <div className="t user"><b>you</b> › msg #{e.id} · {e.text.length} chars{e.attachments.length ? ` · ${e.attachments.join(", ")}` : ""}</div>;
+      return <div className="t user"><b>you</b> · msg #{e.id} · {e.text.length} chars{e.attachments.length ? ` · ${e.attachments.join(", ")}` : ""}</div>;
     case "notification":
       return <div className="t dim">{e.text}</div>;
     case "state":
-      return <div className="t state">· {e.state}</div>;
+      return <div className="t state">{e.state}</div>;
     case "llm_reasoning":
       return <div className="t reasoning"><Md text={e.text} /></div>;
     case "code":
@@ -59,7 +59,7 @@ export function TraceView({ events, state }: { events: Ev[]; state: string }) {
       <div className="toolbar">
         <span className="dim">read-only trace · {events.length} events</span>
         <button className="stop" disabled={state === "idle"} onClick={() => void fetch("/api/agent/stop", { method: "POST" })}>
-          ■ stop
+          ■ Stop
         </button>
       </div>
       <div className="scroll trace" ref={ref} onScroll={onScroll}>

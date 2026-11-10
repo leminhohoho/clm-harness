@@ -1,5 +1,6 @@
 """CLM context file: render the editable message list to text and parse it back."""
 
+import difflib
 import re
 from dataclasses import dataclass
 
@@ -77,6 +78,18 @@ def parse(text: str) -> list[Msg]:
 def tokens(text: str) -> int:
     """Cheap token estimate (~4 chars/token)."""
     return len(text) // 4
+
+
+def diff_lines(before: str, after: str) -> list[dict]:
+    """Line diff in file order; a replaced block lists its removed lines before its added ones."""
+    a, b = before.splitlines(), after.splitlines()
+    out = []
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
+        if tag == "equal":
+            out += [{"op": " ", "text": t} for t in a[i1:i2]]
+            continue
+        out += [{"op": "-", "text": t} for t in a[i1:i2]] + [{"op": "+", "text": t} for t in b[j1:j2]]
+    return out
 
 
 def to_langchain(system: str, msgs: list[Msg]) -> list[BaseMessage]:

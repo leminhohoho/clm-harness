@@ -20,11 +20,10 @@ from .executor import Executor
 from .loop import Agent
 from .metrics import Metrics
 from .notify import Notifier, msg_stub
-from .outbox import Outbox, themed
+from .outbox import Outbox
 
 log = logging.getLogger("backend")
 PROMPT = Path(__file__).parent / "prompts" / "system.md"
-THEME_CSS = Path(__file__).resolve().parents[3] / "frontend" / "src" / "marimo-theme.css"
 TOOL = {"type": "function", "function": {
     "name": "python",
     "description": "Run Python code as a fresh `uv run` process in the agent folder (`import harness as h`). "
@@ -79,7 +78,7 @@ def create_app(agent_dir: Path | None = None, model=None) -> FastAPI:
                      notifier, events, metrics, budget)
         notifier.on_new = loop.poke
         s.update(state=state, events=events, notifier=notifier, metrics=metrics, executor=executor, agent=loop,
-                 outbox=Outbox(agent, state, events, notifier))
+                 outbox=Outbox(hdir, state, events))
         tasks = [asyncio.create_task(loop.run_forever()), asyncio.create_task(watch())]
         yield
         for t in tasks:
@@ -112,15 +111,6 @@ def create_app(agent_dir: Path | None = None, model=None) -> FastAPI:
         if Path(name).name != name or not p.is_file():
             raise HTTPException(404)
         return FileResponse(p)
-
-    @app.get("/api/outbox/{i}.html")
-    async def outbox_html(i: int, theme: str = "light"):
-        p = hdir / "outbox" / f"{i}.html"
-        if not p.is_file():
-            raise HTTPException(404)
-        css_path = Path(os.environ.get("MARIMO_THEME_CSS", THEME_CSS))
-        css = css_path.read_text() if css_path.is_file() else ""
-        return HTMLResponse(themed(p.read_text(), css, "dark" if theme == "dark" else "light"))
 
     @app.get("/api/context-edits/{n}")
     async def context_edit(n: int):

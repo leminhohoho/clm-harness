@@ -22,9 +22,6 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setenv("MODEL", "m")
     monkeypatch.setenv("PRICES", '{"m": {"in": 1, "out": 1, "cached": 1}}')
     monkeypatch.setenv("CONTEXT_BUDGET", "5000")
-    css = tmp_path / "theme.css"
-    css.write_text("/*THEME*/")
-    monkeypatch.setenv("MARIMO_THEME_CSS", str(css))
     return tmp_path / "agent"
 
 
@@ -75,16 +72,6 @@ def test_watcher_reports_opened_and_sub_usage(env):
         u = events(env, "usage")[0]
         assert u["scope"] == "sub" and u["cost"] == pytest.approx(15 / 1e6)
         assert c.get("/api/metrics").json()["calls"]["sub"] == 1
-
-
-def test_outbox_html_is_themed_on_serve(env):
-    with client(env) as c:
-        (env / ".harness/outbox").mkdir()
-        (env / ".harness/outbox/3.html").write_text('<html><head></head><body>"theme": "light"</body></html>')
-        dark = c.get("/api/outbox/3.html?theme=dark").text
-        assert 'data-theme="dark"' in dark and '"theme": "dark"' in dark and "/*THEME*/" in dark
-        assert '"theme": "light"' in c.get("/api/outbox/3.html?theme=light").text
-        assert c.get("/api/outbox/9.html").status_code == 404
 
 
 def test_context_edit_diff_route(env):

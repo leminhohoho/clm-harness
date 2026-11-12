@@ -303,7 +303,8 @@ CSS only. Durations are 120–200 ms with `ease-out`. Everything is disabled und
 
 ### 6.8 Deploy
 
-1. Back up the live agent first (read-only for the agent). Inside the backend container: `cp -a /data/researcher/profile.json /data/researcher/.harness/events.jsonl /data/backup-2026-11-12/`.
+1. Back up the live agent first (read-only for the agent). Inside the backend container: `mkdir -p /data/backup-2026-11-12/researcher && cp -a /data/researcher/profile.json /data/researcher/.harness/events.jsonl /data/backup-2026-11-12/researcher/`.
+   - The extra `researcher/` level matters: a `profile.json` directly under `/data/<folder>/` makes that folder a profile, so the backend would start a runtime for the backup.
    - Copying only these two files is my call; it's cheap and they are the irreplaceable pieces this change touches or reads.
 2. Confirm the agent is idle: the state dot is idle, or the metrics show `agent idle`.
 3. Rebuild and restart both services with compose on the remote host.

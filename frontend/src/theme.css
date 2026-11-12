@@ -236,6 +236,9 @@ pre.numbered .ln::before { counter-increment: ln; content: counter(ln); display:
 .form .hint { margin-top: -6px; font-size: 12px; }
 .form .row { display: flex; align-items: flex-end; gap: 8px; }
 .form button { padding: 6px 14px; }
+.model-in { display: flex; gap: 6px; }
+.model-in input { flex: 1; min-width: 0; }
+.model-in select { width: 132px; flex: none; background: var(--surface-2); color: var(--fg); border: 1px solid transparent; border-radius: 8px; padding: 5px 6px; font: inherit; font-size: 12px; cursor: pointer; }
 .actions { display: flex; justify-content: flex-end; gap: 8px; }
 .info { display: grid; grid-template-columns: auto 1fr; gap: 4px 16px; margin: 0; font-size: 13px; }
 .info dt { color: var(--muted); }

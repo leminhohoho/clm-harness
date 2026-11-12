@@ -36,12 +36,11 @@ def default_model(model_id: str):
 
 
 def gateway_models() -> list[str]:
-    """Model ids the gateway serves on /chat/completions (claude-*/gpt-* are listed but don't work there)."""
+    """Every model id the gateway lists on /models."""
     req = urllib.request.Request(os.environ.get("OPENAI_BASE_URL", "").rstrip("/") + "/models", headers={
         "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY', '')}", "User-Agent": "clm-harness/1.0"})
     with urllib.request.urlopen(req, timeout=10) as r:
-        ids = [m["id"] for m in json.load(r)["data"]]
-    return [i for i in ids if not i.startswith(("claude-", "gpt-"))]
+        return [m["id"] for m in json.load(r)["data"]]
 
 
 def inside(r: Runtime, path: str) -> Path:

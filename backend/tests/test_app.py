@@ -160,17 +160,17 @@ class Gateway(BaseHTTPRequestHandler):
         pass
 
 
-def test_models_route_filters_and_caches(data, monkeypatch):
+def test_models_route_lists_all_and_caches(data, monkeypatch):
     monkeypatch.setenv("OPENAI_BASE_URL", "http://127.0.0.1:9/v1")  # nothing listens: gateway down
     with client(data) as c:
         assert c.get("/api/models").json() == []
         srv = HTTPServer(("127.0.0.1", 0), Gateway)
         threading.Thread(target=srv.serve_forever, daemon=True).start()
         monkeypatch.setenv("OPENAI_BASE_URL", f"http://127.0.0.1:{srv.server_port}/v1")
-        assert c.get("/api/models").json() == ["deepseek/a", "z/b"]
+        assert c.get("/api/models").json() == ["deepseek/a", "claude-x", "gpt-5", "z/b"]
         srv.shutdown()
         srv.server_close()
-        assert c.get("/api/models").json() == ["deepseek/a", "z/b"]  # cached after first success
+        assert c.get("/api/models").json() == ["deepseek/a", "claude-x", "gpt-5", "z/b"]  # cached after first success
 
 
 def test_watcher_reports_opened_and_sub_usage(data):

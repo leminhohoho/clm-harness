@@ -1,24 +1,33 @@
 import { useEffect, useState } from "react";
 import { ChatView } from "./ChatView";
 import { ContextView } from "./ContextView";
+import type { Profile } from "./derive";
+import { AgentSettings, NewAgent } from "./Dialogs";
 import { FilesView } from "./FilesView";
-import { SettingsPanel, type Profile } from "./SettingsPanel";
+import { Avatar, Sidebar, working } from "./Sidebar";
 import { TraceView } from "./TraceView";
 import { useEvents } from "./ws";
 
 const TABS = ["chat", "trace", "context", "files"] as const;
 type Tab = (typeof TABS)[number];
+type Dialog = { kind: "new" } | { kind: "settings"; name: string } | null;
 
 export function App() {
   const [profiles, setProfiles] = useState<Profile[] | null>(null);
   const [profile, setProfile] = useState<string | null>(localStorage.getItem("profile"));
-  const { events, metrics, connected } = useEvents(profile);
+  const { live, metrics, connected } = useEvents(profile);
   const [tab, setTab] = useState<Tab>("chat");
-  const [panel, setPanel] = useState(false);
+  const [dialog, setDialog] = useState<Dialog>(null);
+  const [pop, setPop] = useState(false);
+  const [pane, setPane] = useState<"list" | "agent">("list"); // mobile only
   const [theme, setTheme] = useState(document.documentElement.dataset.theme ?? "light");
 
   const refresh = () => void fetch("/api/profiles").then((r) => r.json()).then(setProfiles, () => {});
-  useEffect(refresh, []);
+  useEffect(() => {
+    refresh();
+    const t = setInterval(refresh, 10_000); // keeps the other agents' states current
+    return () => clearInterval(t);
+  }, []);
 
   // fall back to the first profile when the stored one is missing or was deleted
   useEffect(() => {
@@ -36,10 +45,15 @@ export function App() {
 
   useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.key === "Escape") return setPanel(false);
+      if (e.key === "Escape") return setDialog(null), setPop(false);
       if (!e.altKey) return;
-      const act = { KeyT: () => setTab((t) => TABS[(TABS.indexOf(t) + 1) % TABS.length]), KeyS: () => setPanel((p) => !p),
-        KeyD: () => setTheme((t) => (t === "dark" ? "light" : "dark")) }[e.code];
+      const act = {
+        KeyT: () => setTab((t) => TABS[(TABS.indexOf(t) + 1) % TABS.length]),
+        KeyD: () => setTheme((t) => (t === "dark" ? "light" : "dark")),
+        KeyN: () => setDialog({ kind: "new" }),
+        KeyS: () => profile && setDialog({ kind: "settings", name: profile }),
+        KeyM: () => setPop((p) => !p),
+      }[e.code];
       if (act) {
         e.preventDefault();
         act();
@@ -47,44 +61,59 @@ export function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [profile]);
 
-  const state = metrics?.m.agent.state ?? "idle";
-  const view = !profile ? null
-    : tab === "chat" ? <ChatView events={events} profile={profile} />
-    : tab === "trace" ? <TraceView events={events} state={state} profile={profile} />
-    : tab === "context" ? <ContextView events={events} profile={profile} />
-    : <FilesView profile={profile} />;
+  const state = connected ? metrics?.m.agent.state ?? "idle" : "disconnected";
+  const cur = profiles?.find((p) => p.name === profile);
+  const editing = dialog?.kind === "settings" && profiles?.find((p) => p.name === dialog.name);
+  const view = !cur ? null
+    : tab === "chat" ? <ChatView live={live} profile={cur.name} />
+    : tab === "trace" ? <TraceView live={live} profile={cur.name} />
+    : tab === "context" ? <ContextView live={live} profile={cur.name} />
+    : <FilesView profile={cur.name} />;
 
   return (
-    <div className="app">
-      <header>
-        <span className="brand">clm-harness</span>
-        <button className="chip-profile" onClick={() => setPanel(true)} title={connected ? state : "disconnected"}>
-          <i className={`dot ${connected ? state : "disconnected"}`} />{profile ?? "no profile"}
-        </button>
-        {TABS.map((t) => (
-          <button key={t} className={`tab ${tab === t ? "active" : ""}`} onClick={() => setTab(t)}>
-            {t[0].toUpperCase() + t.slice(1)}
-          </button>
-        ))}
-        <span className="spacer" />
-        <span className="dim hint">alt+t tab · alt+s settings · alt+d theme</span>
-        <button className="gear" title="settings (alt+s)" onClick={() => setPanel((p) => !p)}>⚙</button>
-      </header>
-      <main>
-        {view ? <div key={profile} className="view">{view}</div> : profiles && (
+    <div className={`app ${pane === "agent" && cur ? "pane-agent" : ""}`}>
+      <Sidebar profiles={profiles ?? []} current={profile} state={state} metrics={metrics} pop={pop} theme={theme}
+        onSelect={(name) => (setProfile(name), setPane("agent"))} onNew={() => setDialog({ kind: "new" })}
+        onSettings={(name) => setDialog({ kind: "settings", name })} onPop={() => setPop((p) => !p)}
+        onTheme={() => setTheme(theme === "dark" ? "light" : "dark")} />
+      <section className="pane">
+        {cur ? (
+          <>
+            <header className="agent-head">
+              <button className="back" title="agents" onClick={() => setPane("list")}>←</button>
+              <Avatar name={cur.name} state={state} />
+              <span className="who">
+                <b>{cur.name}</b>
+                <span className={working(state) ? "accent" : state === "disconnected" ? "err" : "dim"}>{working(state) ? `${state}…` : state}</span>
+              </span>
+              <nav className="tabs">
+                {TABS.map((t) => (
+                  <button key={t} className={`tab ${tab === t ? "active" : ""}`} title="alt+t" onClick={() => setTab(t)}>
+                    {t[0].toUpperCase() + t.slice(1)}
+                  </button>
+                ))}
+              </nav>
+              <button className="more" title="agent settings (alt+s)" onClick={() => setDialog({ kind: "settings", name: cur.name })}>⋯</button>
+            </header>
+            <main><div key={`${cur.name}/${tab}`} className="view fade">{view}</div></main>
+          </>
+        ) : profiles?.length === 0 && (
           <div className="center dim">
-            no profiles yet
-            <button className="primary" onClick={() => setPanel(true)}>Open settings</button>
+            no agents yet
+            <button className="primary" onClick={() => setDialog({ kind: "new" })}>New agent</button>
           </div>
         )}
-        {panel && (
-          <SettingsPanel profiles={profiles ?? []} current={profile} onSwitch={setProfile} refresh={refresh}
-            metrics={metrics} theme={theme} onTheme={() => setTheme(theme === "dark" ? "light" : "dark")}
-            onClose={() => setPanel(false)} />
-        )}
-      </main>
+      </section>
+      {dialog?.kind === "new" && (
+        <NewAgent onClose={() => setDialog(null)}
+          onCreated={(name) => (refresh(), setProfile(name), setPane("agent"), setDialog(null))} />
+      )}
+      {editing && (
+        <AgentSettings key={editing.name} agent={editing.name === profile ? { ...editing, state } : editing}
+          onChanged={refresh} onDeleted={() => (refresh(), setDialog(null))} onClose={() => setDialog(null)} />
+      )}
     </div>
   );
 }

@@ -1,5 +1,8 @@
-import { useEffect, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { api, contextEdits, foldDiff, type DiffLine, type Ev } from "./derive";
+import { useHistory } from "./ws";
+
+const TYPES = ["context_edit"];
 
 const CLS = { " ": "ln", "+": "ln add", "-": "ln del" } as const;
 
@@ -12,8 +15,9 @@ function Fold({ count, lines }: { count: number; lines: DiffLine[] }) {
   return <span className="ln fold" onClick={() => setOpen(true)}>⋯ {count} {what} lines hidden · click to expand</span>;
 }
 
-export function ContextView({ events, profile }: { events: Ev[]; profile: string }) {
-  const edits = contextEdits(events);
+export const ContextView = memo(function ContextView({ live, profile }: { live: Ev[] | null; profile: string }) {
+  const { items, loadOlder, loading, more } = useHistory(profile, TYPES, live, 1000);
+  const edits = useMemo(() => contextEdits(items), [items]);
   const [sel, setSel] = useState<number>();
   const cur = edits.find((e) => e.n === sel) ?? edits[0];
   const [diff, setDiff] = useState<{ n: number; lines: DiffLine[] }>();
@@ -25,7 +29,7 @@ export function ContextView({ events, profile }: { events: Ev[]; profile: string
     return () => void (live = false);
   }, [cur?.n]);
 
-  if (!cur) return <div className="view"><div className="dim empty pad">no context edits yet — they appear here when the agent rewrites context.md.</div></div>;
+  if (!cur) return <div className="view"><div className="dim empty pad">{!live || more ? "loading…" : "no context edits yet — they appear here when the agent rewrites context.md."}</div></div>;
   const lines = diff?.n === cur.n ? diff.lines : [];
   const added = lines.filter((l) => l.op === "+").length, removed = lines.filter((l) => l.op === "-").length;
 
@@ -38,6 +42,7 @@ export function ContextView({ events, profile }: { events: Ev[]; profile: string
             <span className="s">{e.receipt.replace(/^\[context edited\] /, "")}</span>
           </button>
         ))}
+        {more && <button className="edit older" disabled={loading} onClick={() => void loadOlder()}>{loading ? "loading…" : "load older edits"}</button>}
       </nav>
       <div className="scroll file">
         <div className="bar">context.md after edit #{cur.n} · <span className="ok">+{added}</span> <span className="err">−{removed}</span> lines</div>
@@ -47,4 +52,4 @@ export function ContextView({ events, profile }: { events: Ev[]; profile: string
       </div>
     </div>
   );
-}
+});

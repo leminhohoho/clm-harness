@@ -200,3 +200,37 @@ def test_context_edit_diff_and_stop_routes(data):
             "n": 2, "lines": [{"op": " ", "text": "a"}, {"op": "-", "text": "b"}, {"op": "+", "text": "c"}]}
         assert c.get("/api/p/a/context-edits/3").status_code == 404
         assert c.post("/api/p/a/agent/stop").json() == {"ok": True}
+
+
+def test_events_page_route(data):
+    with client(data) as c:
+        c.post("/api/profiles", json={"name": "a"})
+        a = data / "a/.harness/events.jsonl"
+        a.write_text("".join(json.dumps({"seq": i, "ts": 0, "type": "user_message" if i % 2 else "state", "id": i})
+                             + "\n" for i in range(1, 1201)))
+        page = lambda q: c.get(f"/api/p/a/events?{q}").json()
+        p = page("")
+        assert len(p["events"]) == 200 and p["events"][-1]["seq"] == 1200 and p["more"]
+        assert len(page("limit=5000")["events"]) == 1000 and page("limit=0")["events"][0]["seq"] == 1200
+        p = page("before=6&types=user_message,job_update&limit=10")
+        assert [e["seq"] for e in p["events"]] == [1, 3, 5] and not p["more"]
+        assert c.get("/api/p/nope/events").status_code == 404
+
+
+def test_patch_profile_model(data):
+    used = []
+
+    def factory(model_id):
+        used.append(model_id)
+        return FakeModel(say("hi"))
+    with TestClient(create_app(data, factory)) as c:
+        c.post("/api/profiles", json={"name": "a", "model": "x/old"})
+        created = json.loads((data / "a/profile.json").read_text())["created"]
+        assert c.patch("/api/profiles/a", json={"model": ""}).status_code == 422
+        assert c.patch("/api/profiles/nope", json={"model": "x/new"}).status_code == 404
+        assert c.patch("/api/profiles/a", json={"model": "x/new"}).json() == {"name": "a", "model": "x/new", "state": "idle"}
+        assert json.loads((data / "a/profile.json").read_text()) == {"model": "x/new", "created": created}
+        assert used == ["x/old", "x/new"] and c.get("/api/profiles").json()[0]["model"] == "x/new"
+        c.post("/api/p/a/messages", data={"text": "x"})
+        assert wait(lambda: events(data / "a", "usage"))
+        assert events(data / "a", "usage")[0]["model"] == "x/new"

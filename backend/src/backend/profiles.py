@@ -119,6 +119,15 @@ class Profiles:
         write_json(d / "profile.json", {"model": model, "created": time.time()})
         return self._start(d)
 
+    def set_model(self, name: str, model: str) -> Runtime:
+        """Persist the new main model and swap it in; an in-flight call finishes on the old one."""
+        r = self.get(name)
+        p = r.dir / "profile.json"
+        write_json(p, {**json.loads(p.read_text()), "model": model})
+        r.model = model
+        r.agent.model, r.agent.model_name = r.model_factory(model), model
+        return r
+
     async def delete(self, name: str) -> None:
         r = self.get(name)
         del self.runtimes[name]

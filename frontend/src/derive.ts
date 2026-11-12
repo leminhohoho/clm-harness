@@ -1,5 +1,5 @@
 type Base = { seq: number; ts?: number };
-export type UserMsg = Base & { type: "user_message"; id: number; text: string; attachments: string[] };
+export type UserMsg = Base & { type: "user_message"; id: number; text: string; attachments: string[]; opened?: boolean };
 export type FileRef = { name: string; size: number };
 export type AgentMsg = Base & { type: "agent_message"; id: number; text: string; files: FileRef[] };
 export type ContextEdit = Base & { type: "context_edit"; ok: boolean; receipt: string; before?: number; after?: number; n?: number };
@@ -13,12 +13,15 @@ export type Ev =
   | ContextEdit
   | (Base & { type: "job_update"; id: number; status: string; cmd?: string; exit?: number })
   | (Base & { type: "state"; state: string })
-  | (Base & {
-      type: "usage"; scope: string; model: string; tin: number; tout: number; cached: number;
-      cost: number | null; latency: number;
-    })
+  | Usage
   | (Base & { type: "message_opened"; id: number })
   | (Base & { type: "error"; text: string });
+
+export type Usage = Base & {
+  type: "usage"; scope: string; model: string; tin: number; tout: number; cached: number; cost: number | null; latency: number;
+};
+
+export type Profile = { name: string; model: string; state: string };
 
 export type Metrics = {
   type: "metrics";
@@ -64,10 +67,50 @@ export const rawUrl = (profile: string, path: string, download = false) =>
 
 export type ChatItem = (UserMsg & { opened: boolean }) | AgentMsg;
 
-export function chatItems(events: Ev[]): ChatItem[] {
-  const opened = new Set(events.flatMap((e) => (e.type === "message_opened" ? [e.id] : [])));
+/** Ids of messages the agent opened, from live message_opened events (paged rows carry their own `opened`). */
+export const openedIds = (events: Ev[]) => new Set(events.flatMap((e) => (e.type === "message_opened" ? [e.id] : [])));
+
+export function chatItems(events: Ev[], opened: Set<number>): ChatItem[] {
   return events.flatMap((e): ChatItem[] =>
-    e.type === "user_message" ? [{ ...e, opened: opened.has(e.id) }] : e.type === "agent_message" ? [e] : []);
+    e.type === "user_message" ? [{ ...e, opened: !!e.opened || opened.has(e.id) }] : e.type === "agent_message" ? [e] : []);
+}
+
+/** Trace boxes, keyed by the seq of their first event. */
+export type Card =
+  | { kind: "thinking"; seq: number; usage?: Usage; text?: string }
+  | { kind: "exec"; seq: number; code?: string; output?: string }
+  | { kind: "event"; seq: number; e: Ev };
+
+export function traceCards(events: Ev[]): Card[] {
+  const cards: Card[] = [];
+  const open: (Card & { kind: "exec" })[] = [];
+  let think: (Card & { kind: "thinking" }) | undefined;
+  for (const e of events) {
+    if (e.type === "state") continue;
+    if (e.type === "usage" && e.scope === "main") cards.push((think = { kind: "thinking", seq: e.seq, usage: e }));
+    else if (e.type === "llm_reasoning") {
+      if (think && think.text == null) think.text = e.text;
+      else cards.push((think = { kind: "thinking", seq: e.seq, text: e.text }));
+    } else if (e.type === "code") {
+      const c = { kind: "exec" as const, seq: e.seq, code: e.code };
+      cards.push(c);
+      open.push(c);
+      think = undefined;
+    } else if (e.type === "run_result") {
+      const c = open.pop();
+      if (c) c.output = e.output;
+      else cards.push({ kind: "exec", seq: e.seq, output: e.output });
+    } else cards.push({ kind: "event", seq: e.seq, e });
+  }
+  return cards;
+}
+
+const BASE = 10_000_000;
+
+/** Virtuoso firstItemIndex: rows older than the first live seq count down from BASE, so prepends stay anchored. */
+export function firstIndex(rows: { seq: number }[], pivot: number) {
+  const i = rows.findIndex((r) => r.seq >= pivot);
+  return BASE - (i < 0 ? rows.length : i);
 }
 
 export function runningJobs(events: Ev[]): number[] {

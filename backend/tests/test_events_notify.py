@@ -27,6 +27,23 @@ async def test_events_seq_persist_and_broadcast(tmp_path):
     assert ev2.emit("x")["seq"] == 3
 
 
+def test_events_page_tail_before_types_and_opened(tmp_path):
+    ev = Events(tmp_path / "events.jsonl")
+    for i in range(1, 4):
+        ev.emit("user_message", id=i, text=f"m{i}")
+        ev.emit("state", state="idle")
+    ev.emit("message_opened", id=2)
+    size = ev.path.stat().st_size
+    p = ev.page(None, 3, None)
+    assert [e["seq"] for e in p["events"]] == [5, 6, 7] and p["more"]
+    p = ev.page(5, 10, {"user_message"})
+    assert [(e["id"], e["opened"]) for e in p["events"]] == [(1, False), (2, True)] and not p["more"]
+    p = ev.page(6, 1, {"user_message", "state"})
+    assert [e["seq"] for e in p["events"]] == [5] and p["more"] and p["events"][0]["opened"] is False
+    assert ev.page(1, 5, None) == {"events": [], "more": False}
+    assert ev.path.stat().st_size == size  # read-only
+
+
 def test_notifier_delivers_once_across_restarts(tmp_path):
     st, ev = State(tmp_path / "s.json"), Events(tmp_path / "e.jsonl")
     pokes = []

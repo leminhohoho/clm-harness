@@ -61,6 +61,17 @@ class Events:
     def since(self, seq: int) -> list[dict]:
         return [e for e in read_jsonl(self.path) if e["seq"] > seq]
 
+    def page(self, before: int | None, limit: int, types: set[str] | None) -> dict:
+        """Last `limit` events with seq < before (matching `types`), ascending; user_message rows get `opened`."""
+        rows = read_jsonl(self.path)
+        opened = {e["id"] for e in rows if e["type"] == "message_opened"}
+        hits = [e for e in rows if (before is None or e["seq"] < before) and (types is None or e["type"] in types)]
+        out = hits[-limit:]
+        for e in out:
+            if e["type"] == "user_message":
+                e["opened"] = e["id"] in opened
+        return {"events": out, "more": len(hits) > len(out)}
+
     def subscribe(self) -> asyncio.Queue:
         q: asyncio.Queue = asyncio.Queue()
         self.subs.add(q)

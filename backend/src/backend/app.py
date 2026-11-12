@@ -10,7 +10,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from harness import write_json
 
@@ -57,6 +57,10 @@ class NewProfile(BaseModel):
     model: str | None = None
 
 
+class ModelChange(BaseModel):
+    model: str = Field(min_length=1)
+
+
 def create_app(data_dir: Path | None = None, model_factory=None) -> FastAPI:
     profiles = Profiles(Path(data_dir or os.environ.get("DATA_DIR", "/data")), model_factory or default_model)
     models: list[str] = []
@@ -81,6 +85,10 @@ def create_app(data_dir: Path | None = None, model_factory=None) -> FastAPI:
     async def delete_profile(name: str):
         await profiles.delete(name)
         return {"ok": True}
+
+    @app.patch("/api/profiles/{name}")
+    async def patch_profile(name: str, p: ModelChange):
+        return profiles.set_model(name, p.model).info()
 
     @app.get("/api/models")
     async def list_models():
@@ -117,6 +125,10 @@ def create_app(data_dir: Path | None = None, model_factory=None) -> FastAPI:
         if not (b.is_file() and a.is_file()):
             raise HTTPException(404)
         return {"n": n, "lines": diff_lines(b.read_text(), a.read_text())}
+
+    @app.get("/api/p/{name}/events")
+    async def events_page(name: str, before: int | None = None, limit: int = 200, types: str = ""):
+        return profiles.get(name).events.page(before, min(max(limit, 1), 1000), set(types.split(",")) if types else None)
 
     @app.get("/api/p/{name}/metrics")
     async def get_metrics(name: str):

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { chatItems, contextEdits, fmtCost, fmtDur, fmtSize, fmtTok, foldDiff, isImage, mergeEvents, rawUrl, runningJobs, timeOf, type DiffLine, type Ev } from "./derive";
+import { chatItems, contextEdits, firstIndex, fmtCost, fmtDur, fmtSize, fmtTok, foldDiff, isImage, mergeEvents, openedIds, rawUrl, runningJobs, timeOf, traceCards, type DiffLine, type Ev } from "./derive";
 
 describe("formatters", () => {
   test("tokens", () => {
@@ -30,19 +30,72 @@ describe("formatters", () => {
   });
 });
 
-test("chat shows user and agent messages only, with opened markers", () => {
-  const items = chatItems([
+test("chat shows user and agent messages only; opened from the REST flag or a live message_opened", () => {
+  const evs: Ev[] = [
     { seq: 1, type: "user_message", id: 1, text: "hi", attachments: ["a.csv"] },
     { seq: 2, type: "notification", nseq: 1, text: "[notify] …" },
     { seq: 3, type: "llm_reasoning", text: "thinking" },
     { seq: 4, type: "message_opened", id: 1 },
     { seq: 5, type: "agent_message", id: 1, text: "**yo**", files: [{ name: "a.png", size: 3 }] },
     { seq: 6, type: "user_message", id: 2, text: "more", attachments: [] },
-  ]);
-  expect(items.map((i) => [i.type, i.id])).toEqual([["user_message", 1], ["agent_message", 1], ["user_message", 2]]);
-  expect(items[0]).toMatchObject({ opened: true });
+    { seq: 7, type: "user_message", id: 3, text: "paged", attachments: [], opened: true },
+    { seq: 8, type: "user_message", id: 4, text: "paged", attachments: [], opened: false },
+  ];
+  const items = chatItems(evs, openedIds([...evs, { seq: 9, type: "message_opened", id: 4 }]));
+  expect(items.map((i) => [i.type, i.id])).toEqual([["user_message", 1], ["agent_message", 1], ["user_message", 2], ["user_message", 3], ["user_message", 4]]);
+  expect(items.map((i) => i.type === "user_message" && i.opened)).toEqual([true, false, false, true, true]);
   expect(items[1]).toMatchObject({ files: [{ name: "a.png", size: 3 }] });
-  expect(items[2]).toMatchObject({ opened: false });
+});
+
+describe("traceCards", () => {
+  const usage = (seq: number, scope = "main"): Ev =>
+    ({ seq, type: "usage", scope, model: "m", tin: 10, tout: 2, cached: 0, cost: null, latency: 1 });
+
+  test("pairs main usage with reasoning and code with its result; state is not a card", () => {
+    const cards = traceCards([
+      { seq: 1, type: "state", state: "thinking" },
+      usage(2),
+      { seq: 3, type: "llm_reasoning", text: "plan" },
+      { seq: 4, type: "code", code: "x" },
+      { seq: 5, type: "state", state: "executing" },
+      usage(6, "sub"),
+      { seq: 7, type: "run_result", output: "ok" },
+      usage(8),
+      { seq: 9, type: "code", code: "y" },
+    ]);
+    expect(cards).toEqual([
+      { kind: "thinking", seq: 2, usage: usage(2), text: "plan" },
+      { kind: "exec", seq: 4, code: "x", output: "ok" },
+      { kind: "event", seq: 6, e: usage(6, "sub") },
+      { kind: "thinking", seq: 8, usage: usage(8) },
+      { kind: "exec", seq: 9, code: "y" },
+    ]);
+  });
+
+  test("reasoning after a texted or missing thinking card starts its own; results go to the latest open exec", () => {
+    const cards = traceCards([
+      { seq: 1, type: "run_result", output: "orphan" },
+      { seq: 2, type: "llm_reasoning", text: "a" },
+      { seq: 3, type: "llm_reasoning", text: "b" },
+      { seq: 4, type: "code", code: "p" },
+      { seq: 5, type: "code", code: "q" },
+      { seq: 6, type: "run_result", output: "for q" },
+      { seq: 7, type: "run_result", output: "for p" },
+      { seq: 8, type: "message_opened", id: 1 },
+    ]);
+    expect(cards.map((c) => [c.kind, c.seq])).toEqual([["exec", 1], ["thinking", 2], ["thinking", 3], ["exec", 4], ["exec", 5], ["event", 8]]);
+    expect(cards[0]).toEqual({ kind: "exec", seq: 1, output: "orphan" });
+    expect(cards.slice(1, 5).map((c) => ("text" in c ? c.text : "output" in c && c.output))).toEqual(["a", "b", "for p", "for q"]);
+  });
+});
+
+test("firstIndex counts down for rows older than the first live seq only", () => {
+  const rows = (...seqs: number[]) => seqs.map((seq) => ({ seq }));
+  const base = firstIndex(rows(10, 12), 10);
+  expect(firstIndex(rows(10, 12, 13), 10)).toBe(base); // live append: no shift
+  expect(firstIndex(rows(3, 5, 10, 12), 10)).toBe(base - 2); // two older rows prepended
+  expect(firstIndex(rows(3, 5), 10)).toBe(base - 2); // view has no live rows yet
+  expect(firstIndex(rows(1, 2), 0)).toBe(base); // empty live at seed: nothing is older
 });
 
 test("images are recognised by extension, case-insensitively", () => {

@@ -22,7 +22,7 @@ export function Modal({ title, onClose, children }: { title: string; onClose: ()
   );
 }
 
-/** Free-text model id with the gateway's models as suggestions. */
+/** Free-text model id, plus a dropdown of every gateway model (a datalist would only show ids matching the text). */
 function ModelInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const [list, setList] = useState<string[]>([]);
   useEffect(() => {
@@ -30,10 +30,13 @@ function ModelInput({ value, onChange }: { value: string; onChange: (v: string) 
     void models.then(setList);
   }, []);
   return (
-    <>
-      <input list="models" placeholder="model" value={value} onChange={(e) => onChange(e.target.value)} />
-      <datalist id="models">{list.map((m) => <option key={m} value={m} />)}</datalist>
-    </>
+    <span className="model-in">
+      <input placeholder="model" value={value} onChange={(e) => onChange(e.target.value)} />
+      <select value="" title="pick from the gateway's models" disabled={!list.length} onChange={(e) => onChange(e.target.value)}>
+        <option value="" disabled>{list.length ? `all models (${list.length})` : "no model list"}</option>
+        {list.map((m) => <option key={m} value={m}>{m}</option>)}
+      </select>
+    </span>
   );
 }
 

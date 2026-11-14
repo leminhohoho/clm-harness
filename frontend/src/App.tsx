@@ -1,16 +1,20 @@
 import { useEffect, useState } from "react";
 import { ChatView } from "./ChatView";
 import { ContextView } from "./ContextView";
-import type { Profile } from "./derive";
+import { notifyBody, shouldNotify, type Profile } from "./derive";
 import { AgentSettings, NewAgent } from "./Dialogs";
 import { FilesView } from "./FilesView";
-import { Avatar, Sidebar, working } from "./Sidebar";
+import { Avatar, Sidebar, working, type Notify } from "./Sidebar";
 import { TraceView } from "./TraceView";
-import { useEvents } from "./ws";
+import { useEvents, useNotify } from "./ws";
 
 const TABS = ["chat", "trace", "context", "files"] as const;
 type Tab = (typeof TABS)[number];
 type Dialog = { kind: "new" } | { kind: "settings"; name: string } | null;
+/** Desktop browsers in a secure context; phones only show notifications through a service worker (non-goal). */
+const CAN_NOTIFY = "Notification" in window && isSecureContext && !matchMedia("(pointer: coarse)").matches;
+const notifyState = (): Notify => Notification.permission === "denied" ? "blocked"
+  : Notification.permission === "granted" && localStorage.getItem("notify") === "on" ? "on" : "off";
 
 export function App() {
   const [profiles, setProfiles] = useState<Profile[] | null>(null);
@@ -19,8 +23,23 @@ export function App() {
   const [tab, setTab] = useState<Tab>("chat");
   const [dialog, setDialog] = useState<Dialog>(null);
   const [pop, setPop] = useState(false);
-  const [pane, setPane] = useState<"list" | "agent">("list"); // mobile only
+  const [pane, setPane] = useState<"list" | "agent">("agent"); // mobile only: the list opens from ←
   const [theme, setTheme] = useState(document.documentElement.dataset.theme ?? "light");
+  const [notify, setNotify] = useState(CAN_NOTIFY ? notifyState() : null);
+
+  useNotify(notify === "on", (m) => {
+    const phone = matchMedia("(max-width: 599px)").matches;
+    const view = { visible: document.visibilityState === "visible", focused: document.hasFocus(), agent: profile, tab, pane: phone ? pane : "agent" as const };
+    if (!shouldNotify(m, view)) return;
+    const n = new Notification(m.agent, { body: notifyBody(m.text, m.files), icon: "/icon-192.png", tag: m.agent });
+    n.onclick = () => (window.focus(), setProfile(m.agent), setTab("chat"), setPane("agent"), n.close());
+  });
+
+  const toggleNotify = async () => {
+    if (notify === "on") localStorage.removeItem("notify");
+    else if ((await Notification.requestPermission()) === "granted") localStorage.setItem("notify", "on");
+    setNotify(notifyState());
+  };
 
   const refresh = () => void fetch("/api/profiles").then((r) => r.json()).then(setProfiles, () => {});
   useEffect(() => {
@@ -41,6 +60,8 @@ export function App() {
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem("theme", theme);
+    const surface = getComputedStyle(document.documentElement).getPropertyValue("--surface").trim();
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", surface);
   }, [theme]);
 
   useEffect(() => {
@@ -75,6 +96,7 @@ export function App() {
   return (
     <div className={`app ${pane === "agent" && cur ? "pane-agent" : ""}`}>
       <Sidebar profiles={profiles ?? []} current={profile} state={state} metrics={metrics} pop={pop} theme={theme}
+        notify={notify} onNotify={toggleNotify}
         onSelect={(name) => (setProfile(name), setPane("agent"))} onNew={() => setDialog({ kind: "new" })}
         onSettings={(name) => setDialog({ kind: "settings", name })} onPop={() => setPop((p) => !p)}
         onTheme={() => setTheme(theme === "dark" ? "light" : "dark")} />

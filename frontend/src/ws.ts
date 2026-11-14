@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, mergeEvents, type Ev, type Metrics } from "./derive";
+import { api, mergeEvents, type Ev, type Metrics, type Push } from "./derive";
 
 const TAIL = 300;
+const wsUrl = (path: string) => `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${path}`;
+
+/** Run `fn` whenever the page becomes visible again (iOS leaves sockets stale while backgrounded). */
+function onVisible(fn: () => void) {
+  const h = () => document.visibilityState === "visible" && fn();
+  document.addEventListener("visibilitychange", h);
+  return () => document.removeEventListener("visibilitychange", h);
+}
 
 /**
  * A profile's events: one REST tail page, then the WS from its last seq (reconnects resume from there).
@@ -30,8 +38,7 @@ export function useEvents(profile: string | null) {
       setLive((l) => l && { profile, events: mergeEvents(l.events, batch) });
     };
     const connect = () => {
-      const proto = location.protocol === "https:" ? "wss" : "ws";
-      ws = new WebSocket(`${proto}://${location.host}/ws/${encodeURIComponent(profile)}?after=${last}`);
+      ws = new WebSocket(wsUrl(`/ws/${encodeURIComponent(profile)}?after=${last}`));
       ws.onopen = () => setConnected(true);
       ws.onmessage = (msg) => {
         const d = JSON.parse(msg.data) as Ev | Metrics;
@@ -42,9 +49,17 @@ export function useEvents(profile: string | null) {
       };
       ws.onclose = (e) => {
         setConnected(false);
-        if (!stopped && e.code !== 4404) retry = window.setTimeout(connect, 1000); // 4404: profile is gone
+        if (e.code === 4404) stopped = true; // profile is gone
+        else if (!stopped) retry = window.setTimeout(connect, 1000);
       };
     };
+    const off = onVisible(() => {
+      if (stopped || !ws) return; // gone, or still seeding
+      ws.onclose = null;
+      ws.close();
+      clearTimeout(retry);
+      connect();
+    });
     const seed = async () => {
       try {
         const r = await fetch(`${api(profile)}/events?limit=${TAIL}`);
@@ -62,6 +77,7 @@ export function useEvents(profile: string | null) {
     void seed();
     return () => {
       stopped = true;
+      off();
       clearTimeout(retry);
       clearTimeout(flushing);
       ws?.close();
@@ -69,6 +85,36 @@ export function useEvents(profile: string | null) {
   }, [profile]);
 
   return { live: live?.profile === profile ? live.events : null, metrics, connected };
+}
+
+/** While `on`: the /ws stream of agent_message rows from every agent, live only; reconnects like useEvents. */
+export function useNotify(on: boolean, onMsg: (m: Push) => void) {
+  const cb = useRef(onMsg);
+  cb.current = onMsg;
+  useEffect(() => {
+    if (!on) return;
+    let ws: WebSocket;
+    let retry = 0;
+    let stopped = false;
+    const connect = () => {
+      ws = new WebSocket(wsUrl("/ws"));
+      ws.onmessage = (m) => cb.current(JSON.parse(m.data) as Push);
+      ws.onclose = () => void (stopped || (retry = window.setTimeout(connect, 1000)));
+    };
+    connect();
+    const off = onVisible(() => {
+      ws.onclose = null;
+      ws.close();
+      clearTimeout(retry);
+      connect();
+    });
+    return () => {
+      stopped = true;
+      off();
+      clearTimeout(retry);
+      ws.close();
+    };
+  }, [on]);
 }
 
 /**

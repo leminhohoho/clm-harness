@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { chatItems, contextEdits, firstIndex, fmtCost, fmtDur, fmtSize, fmtTok, foldDiff, isImage, mergeEvents, openedIds, rawUrl, runningJobs, timeOf, traceCards, type DiffLine, type Ev } from "./derive";
+import { chatItems, contextEdits, firstIndex, fmtCost, fmtDur, fmtSize, fmtTok, foldDiff, isImage, mergeEvents, notifyBody, openedIds, rawUrl, runningJobs, shouldNotify, timeOf, traceCards, type DiffLine, type Ev } from "./derive";
 
 describe("formatters", () => {
   test("tokens", () => {
@@ -164,5 +164,33 @@ describe("foldDiff", () => {
   test("added lines are never folded", () => {
     const lines = run("+", 30);
     expect(foldDiff(lines)).toEqual(lines);
+  });
+});
+
+describe("notifications", () => {
+  const reading = { visible: true, focused: true, agent: "b", tab: "chat", pane: "agent" as const };
+
+  test("silent only while the focused, visible window shows that agent's chat", () => {
+    const b = { agent: "b" };
+    expect(shouldNotify(b, reading)).toBe(false);
+    expect(shouldNotify({ agent: "a" }, reading)).toBe(true);
+    expect(shouldNotify(b, { ...reading, visible: false })).toBe(true);
+    expect(shouldNotify(b, { ...reading, focused: false })).toBe(true);
+    expect(shouldNotify(b, { ...reading, tab: "trace" })).toBe(true);
+    expect(shouldNotify(b, { ...reading, pane: "list" })).toBe(true);
+  });
+
+  test("body is a one-line preview without markdown punctuation", () => {
+    expect(notifyBody("# Done\n\n**all**  `3` _tests_ > pass", [])).toBe("Done all 3 tests pass");
+    const long = notifyBody("word ".repeat(60), []);
+    expect(long.endsWith("…")).toBe(true);
+    expect(long.length).toBeLessThanOrEqual(141);
+  });
+
+  test("files: names when there is no text, a count after text", () => {
+    const f = (name: string) => ({ name, size: 1 });
+    expect(notifyBody("", [f("a.csv"), f("b.png")])).toBe("📎 a.csv, b.png");
+    expect(notifyBody("see", [f("a.csv")])).toBe("see · 📎 1 file");
+    expect(notifyBody("see", [f("a.csv"), f("b.png")])).toBe("see · 📎 2 files");
   });
 });

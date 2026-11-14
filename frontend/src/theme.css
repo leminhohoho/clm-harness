@@ -247,6 +247,14 @@ pre.numbered .ln::before { counter-increment: ln; content: counter(ln); display:
 .danger-zone input { flex: 1; min-width: 0; }
 .edit.older { color: var(--accent); font-size: 12px; text-align: center; }
 
+/* safe areas (all 0 on desktop): notch, home indicator, landscape sides */
+.side-top { padding-top: max(10px, env(safe-area-inset-top)); }
+.agent-head { padding-top: max(6px, env(safe-area-inset-top)); }
+.sidebar { padding-left: env(safe-area-inset-left); }
+.pane { padding-right: env(safe-area-inset-right); }
+.side-bottom { padding-bottom: max(8px, env(safe-area-inset-bottom)); }
+.composer { padding-bottom: max(14px, env(safe-area-inset-bottom)); }
+
 /* compact: a 72px rail of avatars; agent settings via the header ⋯ */
 @media (min-width: 600px) and (max-width: 899px) {
   .app { grid-template-columns: 72px 1fr; }
@@ -260,7 +268,11 @@ pre.numbered .ln::before { counter-increment: ln; content: counter(ln); display:
 
 /* mobile: one pane, list ⇄ agent screen; dialogs become full-screen sheets */
 @media (max-width: 599px) {
-  .app { display: block; position: relative; }
+  .app { display: block; position: relative; overflow: clip; } /* clip: focus in the off-screen pane can't scroll .app sideways */
+  .app :is(textarea, input, select) { font-size: 16px; } /* iOS zooms into fields under 16px */
+  .pane { padding-left: env(safe-area-inset-left); }
+  .sidebar { padding-right: env(safe-area-inset-right); }
+  .modal { padding: max(12px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right)) max(18px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left)); }
   .sidebar, .pane { position: absolute; inset: 0; transition: transform 0.2s ease-out; }
   .sidebar { border-right: none; }
   .app.pane-agent .sidebar { transform: translateX(-100%); }

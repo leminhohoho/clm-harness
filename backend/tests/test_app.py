@@ -189,6 +189,26 @@ def test_watcher_reports_opened_and_sub_usage(data):
         assert c.get("/api/p/a/metrics").json()["calls"]["sub"] == 1
 
 
+def outbox(agent, sid, text, files=()):
+    with open(agent / ".harness/outbox.jsonl", "a") as f:
+        f.write(json.dumps({"id": sid, "ts": 0, "text": text, "files": list(files)}) + "\n")
+
+
+def test_ws_streams_agent_messages_from_every_agent(data):
+    with client(data) as c:
+        c.post("/api/profiles", json={"name": "a"})
+        c.post("/api/profiles", json={"name": "b"})
+        with c.websocket_connect("/ws") as ws:
+            c.post("/api/p/a/messages", data={"text": "user text is not streamed"})
+            outbox(data / "b", 1, "hi from b", [{"name": "x.csv", "size": 3}])
+            m = ws.receive_json()
+            seq = events(data / "b", "agent_message")[0]["seq"]
+            assert m == {"agent": "b", "seq": seq, "ts": m["ts"], "text": "hi from b", "files": [{"name": "x.csv", "size": 3}]}
+            c.post("/api/profiles", json={"name": "c"})  # created after connect
+            outbox(data / "c", 1, "hi from c")
+            assert ws.receive_json()["agent"] == "c"
+
+
 def test_context_edit_diff_and_stop_routes(data):
     with client(data) as c:
         c.post("/api/profiles", json={"name": "a"})

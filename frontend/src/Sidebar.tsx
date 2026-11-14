@@ -4,6 +4,7 @@ import { fmtCost, fmtDur, fmtTok, pct, type Metrics, type Profile } from "./deri
 type Live = { m: Metrics; at: number } | null;
 const PALETTE = ["#e17076", "#faa774", "#a695e7", "#7bc862", "#6ec9cb", "#65aadd", "#ee7aae"];
 export const working = (state: string) => state === "thinking" || state === "executing";
+export type Notify = "on" | "off" | "blocked";
 
 /** Telegram-style round initial, coloured from a hash of the name; ringed while the agent works. */
 export function Avatar({ name, state }: { name: string; state: string }) {
@@ -40,8 +41,8 @@ function MetricsTable({ m, at }: { m: Metrics; at: number }) {
 }
 
 export function Sidebar(p: {
-  profiles: Profile[]; current: string | null; state: string; metrics: Live; pop: boolean; theme: string;
-  onSelect: (name: string) => void; onNew: () => void; onSettings: (name: string) => void; onPop: () => void; onTheme: () => void;
+  profiles: Profile[]; current: string | null; state: string; metrics: Live; pop: boolean; theme: string; notify: Notify | null;
+  onSelect: (name: string) => void; onNew: () => void; onSettings: (name: string) => void; onPop: () => void; onTheme: () => void; onNotify: () => void;
 }) {
   const m = p.metrics?.m;
   return (
@@ -70,6 +71,12 @@ export function Sidebar(p: {
           ▤<span className="lbl">{m ? ` ${Math.round(m.context.pct)}% · ${fmtCost(m.cost.total)}` : ""}</span>
         </button>
         <button className="round" title={`theme: ${p.theme} (alt+d)`} onClick={p.onTheme}>◐</button>
+        {p.notify && (
+          <button className="round" disabled={p.notify === "blocked"} onClick={p.onNotify}
+            title={p.notify === "blocked" ? "notifications blocked in browser settings" : `notifications: ${p.notify}`}>
+            {p.notify === "on" ? "🔔" : "🔕"}
+          </button>
+        )}
         {p.pop && p.metrics && <div className="popover"><MetricsTable m={p.metrics.m} at={p.metrics.at} /></div>}
       </div>
     </aside>

@@ -30,11 +30,11 @@ NAME = re.compile(r"[a-z0-9][a-z0-9_-]{0,31}")
 class Runtime:
     """Everything one agent needs: files, event log, notifier, metrics, executor, loop and watcher."""
 
-    def __init__(self, dir: Path, model_factory: Callable):
+    def __init__(self, dir: Path, model_factory: Callable, on_message: Callable[[str, dict], None]):
         self.dir = Path(dir).resolve()
         self.hdir = self.dir / ".harness"
         self.model = json.loads((self.dir / "profile.json").read_text())["model"]
-        self.model_factory = model_factory
+        self.model_factory, self.on_message = model_factory, on_message
         self.tasks: list[asyncio.Task] = []
 
     def start(self) -> None:
@@ -70,7 +70,8 @@ class Runtime:
 
     def poll(self) -> None:
         self.executor.poll()
-        self.outbox.poll()
+        for ev in self.outbox.poll():
+            self.on_message(self.dir.name, ev)
         for u in tail(self.hdir / "usage.jsonl", self.state, "usage_pos"):
             self.metrics.usage("sub", u["model"], u["in"], u["out"], u["cached"], u["latency"])
         opened = self.state.data.setdefault("opened", [])
@@ -89,9 +90,16 @@ class Profiles:
     def __init__(self, data_dir: Path, model_factory: Callable):
         self.root, self.model_factory = Path(data_dir).resolve(), model_factory
         self.runtimes: dict[str, Runtime] = {}
+        self.listeners: set[asyncio.Queue] = set()
+
+    def broadcast(self, agent: str, ev: dict) -> None:
+        """Fan an agent_message out to every /ws listener."""
+        msg = {"agent": agent, "seq": ev["seq"], "ts": ev["ts"], "text": ev["text"], "files": ev["files"]}
+        for q in self.listeners:
+            q.put_nowait(msg)
 
     def _start(self, d: Path) -> Runtime:
-        r = self.runtimes[d.name] = Runtime(d, self.model_factory)
+        r = self.runtimes[d.name] = Runtime(d, self.model_factory, self.broadcast)
         r.start()
         return r
 

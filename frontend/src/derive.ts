@@ -65,6 +65,23 @@ export const api = (profile: string) => `/api/p/${encodeURIComponent(profile)}`;
 export const rawUrl = (profile: string, path: string, download = false) =>
   `${api(profile)}/raw/${path.split("/").map(encodeURIComponent).join("/")}${download ? "?download=1" : ""}`;
 
+/** One row of the /ws stream: an agent_message from any agent. */
+export type Push = { agent: string; seq: number; ts: number; text: string; files: FileRef[] };
+export type View = { visible: boolean; focused: boolean; agent: string | null; tab: string; pane: "list" | "agent" };
+
+/** Notify unless the user is already looking at that agent's chat. */
+export const shouldNotify = (msg: { agent: string }, v: View) =>
+  !(v.visible && v.focused && v.agent === msg.agent && v.tab === "chat" && v.pane === "agent");
+
+/** One-line preview: markdown punctuation stripped, whitespace collapsed, cut at 140 chars; files summarised. */
+export function notifyBody(text: string, files: FileRef[]) {
+  const t = text.replace(/[*_`#>]/g, "").replace(/\s+/g, " ").trim();
+  const body = t.length > 140 ? `${t.slice(0, 140).trimEnd()}…` : t;
+  if (!files.length) return body;
+  if (!body) return `📎 ${files.map((f) => f.name).join(", ")}`;
+  return `${body} · 📎 ${files.length} file${files.length > 1 ? "s" : ""}`;
+}
+
 export type ChatItem = (UserMsg & { opened: boolean }) | AgentMsg;
 
 /** Ids of messages the agent opened, from live message_opened events (paged rows carry their own `opened`). */

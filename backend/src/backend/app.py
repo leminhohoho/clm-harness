@@ -159,6 +159,27 @@ def create_app(data_dir: Path | None = None, model_factory=None) -> FastAPI:
             raise HTTPException(404)
         return FileResponse(p, headers=RAW_HEADERS, filename=p.name if download else None)
 
+    @app.websocket("/ws")
+    async def ws_messages(sock: WebSocket):
+        """Live agent_message rows from every agent (no replay); the client sends nothing."""
+        await sock.accept()
+        q: asyncio.Queue = asyncio.Queue()
+        profiles.listeners.add(q)
+
+        async def pump():
+            while True:
+                await sock.send_json(await q.get())
+
+        sender = asyncio.create_task(pump())
+        try:
+            while True:
+                await sock.receive_text()
+        except WebSocketDisconnect:
+            pass
+        finally:
+            sender.cancel()
+            profiles.listeners.discard(q)
+
     @app.websocket("/ws/{name}")
     async def ws(sock: WebSocket, name: str, after: int = 0):
         await sock.accept()
